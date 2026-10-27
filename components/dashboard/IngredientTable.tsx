@@ -51,18 +51,25 @@ export function IngredientTable({
   onQuickAdjust,
   loading,
 }: IngredientTableProps) {
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards');
+
+  // Set default view: table on desktop, cards on mobile/tablet
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+      setViewMode('table');
+    }
+  }, []);
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
       
       {/* Search and Filters Toolbar */}
-      <div className="p-4 sm:p-5 border-b border-slate-200 space-y-4">
+      <div className="p-3 sm:p-5 border-b border-slate-200 space-y-3">
         
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
           
           {/* Search Input */}
-          <div className="relative flex-1 max-w-md">
+          <div className="relative flex-1 w-full">
             <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
               <Search className="w-4 h-4" />
             </div>
@@ -71,7 +78,7 @@ export function IngredientTable({
               placeholder="ค้นหาชื่อวัตถุดิบ, ยี่ห้อ, โน้ต..."
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="w-full pl-10 pr-9 h-12 bg-[#F8F9FA] border border-slate-200 rounded-lg text-sm text-[#1A1A1A] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent transition-all"
+              className="w-full pl-10 pr-9 h-11 sm:h-12 bg-[#F8F9FA] border border-slate-200 rounded-xl text-sm text-[#1A1A1A] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent transition-all"
             />
             {searchQuery && (
               <button
@@ -84,15 +91,15 @@ export function IngredientTable({
           </div>
 
           {/* View Toggle & Status Tabs */}
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center justify-between sm:justify-end space-x-2">
             
             {/* Status Filter Badges */}
-            <div className="inline-flex bg-slate-100 p-1 rounded-lg text-xs font-medium">
+            <div className="inline-flex bg-slate-100 p-1 rounded-xl text-xs font-medium">
               <button
                 onClick={() => onStatusFilterChange('all')}
-                className={`px-3 py-2 rounded-md transition-colors ${
+                className={`px-2.5 sm:px-3 py-1.5 rounded-lg transition-colors touch-press ${
                   statusFilter === 'all'
-                    ? 'bg-white text-slate-900 shadow-sm font-semibold'
+                    ? 'bg-white text-slate-900 shadow-xs font-semibold'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -100,9 +107,9 @@ export function IngredientTable({
               </button>
               <button
                 onClick={() => onStatusFilterChange('in_stock')}
-                className={`px-3 py-2 rounded-md transition-colors ${
+                className={`px-2.5 sm:px-3 py-1.5 rounded-lg transition-colors touch-press ${
                   statusFilter === 'in_stock'
-                    ? 'bg-white text-emerald-800 shadow-sm font-semibold'
+                    ? 'bg-white text-emerald-800 shadow-xs font-semibold'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -110,9 +117,9 @@ export function IngredientTable({
               </button>
               <button
                 onClick={() => onStatusFilterChange('low')}
-                className={`px-3 py-2 rounded-md transition-colors ${
+                className={`px-2.5 sm:px-3 py-1.5 rounded-lg transition-colors touch-press ${
                   statusFilter === 'low'
-                    ? 'bg-white text-[#E65100] shadow-sm font-semibold'
+                    ? 'bg-white text-[#E65100] shadow-xs font-semibold'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -120,9 +127,9 @@ export function IngredientTable({
               </button>
               <button
                 onClick={() => onStatusFilterChange('out')}
-                className={`px-3 py-2 rounded-md transition-colors ${
+                className={`px-2.5 sm:px-3 py-1.5 rounded-lg transition-colors touch-press ${
                   statusFilter === 'out'
-                    ? 'bg-white text-[#C62828] shadow-sm font-semibold'
+                    ? 'bg-white text-[#C62828] shadow-xs font-semibold'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -131,24 +138,24 @@ export function IngredientTable({
             </div>
 
             {/* View Mode Toggle */}
-            <div className="inline-flex bg-slate-100 p-1 rounded-lg">
-              <button
-                onClick={() => setViewMode('table')}
-                title="มุมมองตาราง"
-                className={`p-2 rounded-md transition-colors ${
-                  viewMode === 'table' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <List className="w-4 h-4" />
-              </button>
+            <div className="inline-flex bg-slate-100 p-1 rounded-xl">
               <button
                 onClick={() => setViewMode('cards')}
-                title="มุมมองการ์ด (สัมผัสง่าย)"
-                className={`p-2 rounded-md transition-colors ${
-                  viewMode === 'cards' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                title="มุมมองการ์ด (เหมาะกับมือถือ & POS)"
+                className={`p-1.5 sm:p-2 rounded-lg transition-colors touch-press ${
+                  viewMode === 'cards' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
                 <LayoutGrid className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('table')}
+                title="มุมมองตาราง"
+                className={`p-1.5 sm:p-2 rounded-lg transition-colors touch-press ${
+                  viewMode === 'table' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <List className="w-4 h-4" />
               </button>
             </div>
 
@@ -395,15 +402,15 @@ export function IngredientTable({
           </table>
         </div>
       ) : (
-        /* CARDS / TOUCH GRID VIEW (Ideal for POS touchscreen tablets) */
-        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+        /* CARDS / TOUCH GRID VIEW (Ideal for POS touchscreen tablets & Mobile) */
+        <div className="p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3.5">
           {ingredients.map((item) => {
             const status = getStockStatus(item.currentStock, item.minStockLevel);
 
             return (
               <div
                 key={item.id}
-                className={`rounded-xl border p-4 bg-white transition-all ${
+                className={`rounded-2xl border p-3.5 sm:p-4 bg-white transition-all shadow-xs ${
                   status === 'out_of_stock'
                     ? 'border-[#C62828]/40 ring-1 ring-[#C62828]/20'
                     : status === 'low_stock'
@@ -413,30 +420,33 @@ export function IngredientTable({
               >
                 {/* Card Top: Category & Status */}
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
                     {item.category || 'ทั่วไป'}
                   </span>
                   
                   {status === 'out_of_stock' && (
-                    <span className="text-[11px] font-bold text-[#C62828] bg-[#C62828]/10 px-2 py-0.5 rounded border border-[#C62828]/20">
-                      หมดสต็อก
+                    <span className="text-[10px] font-bold text-[#C62828] bg-[#C62828]/10 px-2 py-0.5 rounded border border-[#C62828]/20 flex items-center space-x-1">
+                      <XCircle className="w-3 h-3 inline mr-0.5" />
+                      <span>หมดสต็อก</span>
                     </span>
                   )}
                   {status === 'low_stock' && (
-                    <span className="text-[11px] font-bold text-[#E65100] bg-[#E65100]/10 px-2 py-0.5 rounded border border-[#E65100]/20">
-                      ใกล้หมด (Low)
+                    <span className="text-[10px] font-bold text-[#E65100] bg-[#E65100]/10 px-2 py-0.5 rounded border border-[#E65100]/20 flex items-center space-x-1">
+                      <AlertTriangle className="w-3 h-3 inline mr-0.5" />
+                      <span>ใกล้หมด</span>
                     </span>
                   )}
                   {status === 'in_stock' && (
-                    <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                      ปกติ
+                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 flex items-center space-x-1">
+                      <CheckCircle2 className="w-3 h-3 inline mr-0.5" />
+                      <span>ปกติ</span>
                     </span>
                   )}
                 </div>
 
                 {/* Name & Barcode */}
-                <div className="flex items-center justify-between gap-1">
-                  <h4 className="font-bold text-[#1A1A1A] text-base leading-snug line-clamp-1">
+                <div className="flex items-start justify-between gap-1">
+                  <h4 className="font-bold text-[#1A1A1A] text-sm sm:text-base leading-snug line-clamp-1">
                     {item.name}
                   </h4>
                   {item.barcode && (
@@ -446,49 +456,66 @@ export function IngredientTable({
                   )}
                 </div>
 
-                {/* Stock Details */}
-                <div className="mt-3 p-3 rounded-lg bg-[#F8F9FA] border border-slate-100 flex items-center justify-between">
+                {/* Stock Details Box */}
+                <div className="mt-2.5 p-3 rounded-xl bg-[#F8F9FA] border border-slate-100 flex items-center justify-between">
                   <div>
-                    <span className="text-[11px] text-slate-500 block">สต็อกสุทธิคงเหลือ</span>
+                    <span className="text-[10px] text-slate-500 font-medium block">สต็อกสุทธิคงเหลือ</span>
                     <div className="flex items-baseline space-x-1 mt-0.5">
-                      <span className={`text-2xl font-bold tabular-nums ${
+                      <span className={`text-xl sm:text-2xl font-extrabold tabular-nums ${
                         status === 'out_of_stock' ? 'text-[#C62828]' : status === 'low_stock' ? 'text-[#E65100]' : 'text-slate-900'
                       }`}>
-                        {formatNumber(item.currentStock, item.unit === 'pcs' ? 0 : 1)}
+                        {formatNumber(item.currentStock, item.unit === 'pcs' || item.unit === 'ใบ' || item.unit === 'Cup' ? 0 : 1)}
                       </span>
-                      <span className="text-xs text-slate-500 font-semibold">{item.unit}</span>
+                      <span className="text-xs text-slate-500 font-bold">{item.unit}</span>
                     </div>
                   </div>
 
-                  <div className="text-right">
-                    <span className="text-[11px] text-slate-500 block">น้ำหนักภาชนะ (Tare)</span>
-                    <div className="mt-0.5">
+                  {/* Tare Info & Quick Adjusters */}
+                  <div className="flex flex-col items-end space-y-1">
+                    <div>
                       {item.tareWeight > 0 ? (
-                        <span className="inline-flex items-center text-xs font-bold text-[#1565C0] bg-[#1565C0]/10 px-2 py-0.5 rounded">
+                        <span className="inline-flex items-center text-[11px] font-bold text-[#1565C0] bg-[#1565C0]/10 px-2 py-0.5 rounded">
                           <Scale className="w-3 h-3 mr-1" />
-                          {formatNumber(item.tareWeight, 1)} g
+                          Tare: {formatNumber(item.tareWeight, 1)}g
                         </span>
                       ) : (
-                        <span className="text-xs text-slate-400">-</span>
+                        <span className="text-[10px] text-slate-400">เตือนที่ &le; {formatNumber(item.minStockLevel, 0)} {item.unit}</span>
                       )}
                     </div>
-                    <span className="text-[10px] text-slate-400 block mt-1">เตือนที่ &le; {formatNumber(item.minStockLevel, 0)} {item.unit}</span>
+                    
+                    {/* Quick +/- Steppers */}
+                    <div className="flex items-center space-x-1 pt-0.5">
+                      <button
+                        onClick={() => onQuickAdjust(item, item.unit === 'pcs' || item.unit === 'ใบ' || item.unit === 'Cup' ? 1 : 10, 'subtract')}
+                        title="ลดสต็อกอย่างเร็ว"
+                        className="w-7 h-7 rounded-lg bg-slate-200/80 hover:bg-slate-300 flex items-center justify-center text-slate-700 active:scale-90 transition-all touch-press"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => onQuickAdjust(item, item.unit === 'pcs' || item.unit === 'ใบ' || item.unit === 'Cup' ? 1 : 10, 'add')}
+                        title="เพิ่มสต็อกอย่างเร็ว"
+                        className="w-7 h-7 rounded-lg bg-slate-200/80 hover:bg-slate-300 flex items-center justify-center text-slate-700 active:scale-90 transition-all touch-press"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
                 {/* Quick Touch Actions */}
-                <div className="mt-3.5 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-1.5">
                   <button
                     onClick={() => onOpenScaleModal(item)}
-                    className="flex-1 h-11 rounded-lg border border-[#1565C0]/30 bg-[#1565C0]/5 hover:bg-[#1565C0]/10 text-[#1565C0] text-xs font-semibold flex items-center justify-center space-x-1 touch-press"
+                    className="flex-1 h-10 rounded-xl border border-[#1565C0]/30 bg-[#1565C0]/5 hover:bg-[#1565C0]/10 active:bg-[#1565C0]/20 text-[#1565C0] text-xs font-semibold flex items-center justify-center space-x-1 touch-press transition-colors"
                   >
-                    <Scale className="w-4 h-4" />
+                    <Scale className="w-3.5 h-3.5" />
                     <span>ชั่งตัดภาชนะ</span>
                   </button>
 
                   <button
                     onClick={() => onEdit(item)}
-                    className="h-11 px-3.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-semibold flex items-center space-x-1 touch-press"
+                    className="h-10 px-3 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-100 active:bg-slate-200 text-xs font-semibold flex items-center space-x-1 touch-press transition-colors"
                   >
                     <Edit2 className="w-3.5 h-3.5" />
                     <span>แก้ไข</span>
@@ -496,7 +523,7 @@ export function IngredientTable({
 
                   <button
                     onClick={() => onDelete(item)}
-                    className="h-11 w-11 rounded-lg border border-slate-200 text-[#C62828] hover:bg-[#C62828]/10 flex items-center justify-center touch-press"
+                    className="h-10 w-10 rounded-xl border border-slate-200 text-[#C62828] hover:bg-[#C62828]/10 active:bg-[#C62828]/20 flex items-center justify-center touch-press transition-colors shrink-0"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

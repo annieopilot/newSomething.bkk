@@ -96,23 +96,23 @@ export function IngredientModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs">
       <div 
-        className="relative w-full max-w-2xl bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden my-8"
+        className="relative w-full max-w-2xl bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92dvh] flex flex-col animate-in slide-in-from-bottom duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         
         {/* Modal Header */}
-        <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between bg-[#F8F9FA]">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-lg bg-[#2D2B2A] flex items-center justify-center text-white">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 flex items-center justify-between bg-[#F8F9FA] shrink-0">
+          <div className="flex items-center space-x-2.5 sm:space-x-3">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#2D2B2A] flex items-center justify-center text-white shrink-0">
               <Scale className="w-5 h-5 text-[#D4A373]" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-[#1A1A1A]">
+              <h3 className="text-base sm:text-lg font-bold text-[#1A1A1A]">
                 {isEditMode ? 'แก้ไขข้อมูลวัตถุดิบ' : 'เพิ่มวัตถุดิบใหม่เข้าคลัง'}
               </h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-[11px] sm:text-xs text-slate-500">
                 {isEditMode ? `กำลังแก้ไข: ${initialData?.name}` : 'กำหนดข้อมูลวัตถุดิบและค่าน้ำหนักภาชนะเปล่า (Tare Weight)'}
               </p>
             </div>
@@ -120,15 +120,15 @@ export function IngredientModal({
 
           <button
             onClick={onClose}
-            className="w-10 h-10 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 touch-press transition-colors"
+            className="w-9 h-9 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 touch-press transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit}>
-          <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
             
             {errorMessage && (
               <div className="p-3.5 rounded-lg bg-[#C62828]/10 border border-[#C62828]/20 text-[#C62828] text-sm flex items-center space-x-2">
@@ -341,12 +341,12 @@ export function IngredientModal({
           </div>
 
           {/* Modal Footer */}
-          <div className="px-6 py-4 border-t border-slate-200 bg-[#F8F9FA] flex items-center justify-end space-x-3">
+          <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-slate-200 bg-[#F8F9FA] flex items-center justify-end space-x-2.5 shrink-0">
             <button
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="h-12 px-5 rounded-lg border border-slate-300 bg-white text-slate-700 font-medium text-sm hover:bg-slate-50 touch-press transition-colors disabled:opacity-50"
+              className="flex-1 sm:flex-none h-11 sm:h-12 px-5 rounded-xl border border-slate-300 bg-white text-slate-700 font-semibold text-sm hover:bg-slate-50 touch-press transition-colors disabled:opacity-50"
             >
               ยกเลิก
             </button>
@@ -354,7 +354,7 @@ export function IngredientModal({
             <button
               type="submit"
               disabled={loading}
-              className="h-12 px-6 rounded-lg bg-[#2D2B2A] hover:bg-[#1f1e1d] active:bg-[#151414] text-white font-semibold text-sm flex items-center space-x-2 shadow-sm touch-press transition-colors disabled:opacity-50"
+              className="flex-2 sm:flex-none h-11 sm:h-12 px-6 rounded-xl bg-[#2D2B2A] hover:bg-[#1f1e1d] active:bg-[#151414] text-white font-semibold text-sm flex items-center justify-center space-x-2 shadow-xs touch-press transition-colors disabled:opacity-50"
             >
               <Save className="w-4 h-4 text-[#D4A373]" />
               <span>{loading ? 'กำลังบันทึก...' : isEditMode ? 'บันทึกการแก้ไข' : 'เพิ่มวัตถุดิบเข้าคลัง'}</span>

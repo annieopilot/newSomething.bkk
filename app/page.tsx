@@ -188,18 +188,18 @@ export default function StockDashboardPage() {
       
       {/* Toast Notification Banner */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-4 duration-200">
+        <div className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:right-6 sm:bottom-6 z-50 animate-in fade-in slide-in-from-bottom-4 duration-200">
           <div
-            className={`flex items-center space-x-2.5 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium ${
+            className={`flex items-center justify-center sm:justify-start space-x-2.5 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium ${
               toast.type === 'success'
                 ? 'bg-[#2D2B2A] text-white border-slate-700'
                 : 'bg-[#C62828] text-white border-red-700'
             }`}
           >
             {toast.type === 'success' ? (
-              <CheckCircle2 className="w-5 h-5 text-[#2E7D32]" />
+              <CheckCircle2 className="w-5 h-5 text-[#2E7D32] shrink-0" />
             ) : (
-              <AlertCircle className="w-5 h-5 text-amber-300" />
+              <AlertCircle className="w-5 h-5 text-amber-300 shrink-0" />
             )}
             <span>{toast.message}</span>
           </div>
@@ -229,7 +229,7 @@ export default function StockDashboardPage() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-3.5 sm:py-6">
         
         {/* Summary Cards */}
         <SummaryCards
