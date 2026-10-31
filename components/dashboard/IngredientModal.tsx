@@ -4,6 +4,14 @@ import React, { useState, useEffect } from 'react';
 import { X, Scale, Save, AlertCircle } from 'lucide-react';
 import { Ingredient, IngredientInput, InventoryTab, COMMON_CATEGORIES, COMMON_UNITS } from '@/types/ingredient';
 
+type StockMode = 'add' | 'subtract' | 'set';
+
+const STOCK_MODES: { value: StockMode; label: string; sign: string; activeClass: string }[] = [
+  { value: 'add', label: 'รับเข้า', sign: '+', activeClass: 'bg-[#2E7D32] text-white' },
+  { value: 'subtract', label: 'จ่ายออก', sign: '−', activeClass: 'bg-[#C62828] text-white' },
+  { value: 'set', label: 'แก้ไขยอด', sign: '', activeClass: 'bg-[#2D2B2A] text-white' },
+];
+
 interface IngredientModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -39,6 +47,17 @@ export function IngredientModal({
   });
 
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [stockMode, setStockMode] = useState<StockMode>('set');
+  const [stockAmount, setStockAmount] = useState<number>(0);
+
+  const baseStock = initialData?.currentStock ?? 0;
+  const activeMode = STOCK_MODES.find((mode) => mode.value === stockMode) ?? STOCK_MODES[2];
+  const resultingStock =
+    stockMode === 'add'
+      ? baseStock + stockAmount
+      : stockMode === 'subtract'
+        ? Math.max(0, baseStock - stockAmount)
+        : formData.currentStock;
 
   useEffect(() => {
     if (initialData) {
@@ -73,6 +92,8 @@ export function IngredientModal({
       });
     }
     setErrorMessage('');
+    setStockMode('set');
+    setStockAmount(0);
   }, [initialData, isOpen, activeTab]);
 
   if (!isOpen) return null;
@@ -88,8 +109,13 @@ export function IngredientModal({
       return;
     }
 
+    if (stockMode !== 'set' && stockAmount <= 0) {
+      setErrorMessage(`กรุณาระบุจำนวนที่${activeMode.label}`);
+      return;
+    }
+
     setErrorMessage('');
-    const success = await onSubmit(formData);
+    const success = await onSubmit({ ...formData, currentStock: resultingStock });
     if (success) {
       onClose();
     }
@@ -152,6 +178,68 @@ export function IngredientModal({
               />
             </div>
 
+            {/* CURRENT STOCK (Highlighted — ช่องที่แก้บ่อยที่สุดตอนนับสต็อกรายวัน) */}
+            <div className="p-4 rounded-xl bg-[#8B5A2B]/5 border border-[#8B5A2B]/25 space-y-3">
+              <label className="block text-sm font-bold text-[#8B5A2B]">
+                สต็อกสุทธิคงเหลือ (Current Stock)
+              </label>
+
+              {isEditMode && (
+                <div className="grid grid-cols-3 gap-1.5 p-1 rounded-lg bg-white border border-slate-200">
+                  {STOCK_MODES.map((mode) => (
+                    <button
+                      key={mode.value}
+                      type="button"
+                      onClick={() => {
+                        setStockMode(mode.value);
+                        setStockAmount(0);
+                        setFormData({ ...formData, currentStock: baseStock });
+                      }}
+                      className={`h-11 rounded-md text-sm font-semibold touch-press transition-colors ${
+                        stockMode === mode.value ? mode.activeClass : 'text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="relative">
+                <input
+                  key={stockMode}
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  min="0"
+                  required={stockMode === 'set'}
+                  autoFocus={isEditMode}
+                  onFocus={(e) => e.target.select()}
+                  placeholder={stockMode === 'set' ? '0' : `จำนวนที่${activeMode.label}`}
+                  value={stockMode === 'set' ? formData.currentStock || '' : stockAmount || ''}
+                  onChange={(e) => {
+                    const value = parseFloat(e.target.value) || 0;
+                    if (stockMode === 'set') setFormData({ ...formData, currentStock: value });
+                    else setStockAmount(value);
+                  }}
+                  className="w-full h-16 pl-4 pr-16 rounded-lg border-2 border-[#8B5A2B]/40 bg-white text-2xl font-bold text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent transition-all"
+                />
+                <span className="absolute inset-y-0 right-0 pr-4 flex items-center text-sm text-slate-500 font-semibold">
+                  {formData.unit}
+                </span>
+              </div>
+
+              {isEditMode && stockMode !== 'set' && (
+                <p className="text-sm text-slate-600">
+                  ยอดเดิม <span className="font-semibold">{baseStock}</span> {activeMode.sign} {stockAmount} ={' '}
+                  <span className="font-bold text-[#1A1A1A]">{resultingStock} {formData.unit}</span>
+                  {stockMode === 'subtract' && stockAmount > baseStock && (
+                    <span className="block text-xs text-[#C62828] mt-0.5">จ่ายออกมากกว่ายอดที่มี ระบบจะตั้งยอดเป็น 0</span>
+                  )}
+                </p>
+              )}
+            </div>
+
             {/* Grid 2 Cols: Category & Unit */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               
@@ -193,63 +281,8 @@ export function IngredientModal({
 
             </div>
 
-            {/* TARE WEIGHT (Highlighted Callout Box) */}
-            <div className="p-4 rounded-xl bg-[#1565C0]/5 border border-[#1565C0]/20 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-1.5">
-                  <Scale className="w-4 h-4 text-[#1565C0]" />
-                  <label className="text-xs font-bold text-[#1565C0] uppercase tracking-wide">
-                    น้ำหนักภาชนะ / บรรจุภัณฑ์เปล่า (Tare Weight)
-                  </label>
-                </div>
-                <span className="text-[11px] font-semibold text-[#1565C0] bg-white px-2 py-0.5 rounded border border-[#1565C0]/20">
-                  {formData.tareWeight > 0 ? `[Tare: ${formData.tareWeight} g]` : 'ไม่ระบุ Tare'}
-                </span>
-              </div>
-
-              <p className="text-xs text-slate-600 leading-relaxed">
-                น้ำหนักของโหลแก้ว, ถุงฟอยล์, ขวดไซรัป หรือขวดพลาสติกเปล่า เมื่อบาริสต้านำทั้งขวดขึ้นชั่ง ระบบจะหักน้ำหนักนี้ออกเพื่อให้ได้ปริมาณเนื้อสุทธิที่แท้จริง
-              </p>
-
-              <div className="relative mt-2">
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  placeholder="0.0"
-                  value={formData.tareWeight || ''}
-                  onChange={(e) => setFormData({ ...formData, tareWeight: parseFloat(e.target.value) || 0 })}
-                  className="w-full h-12 pl-4 pr-12 rounded-lg border border-[#1565C0]/40 bg-white text-base font-bold text-[#1565C0] focus:outline-none focus:ring-2 focus:ring-[#1565C0] focus:border-transparent transition-all"
-                />
-                <span className="absolute inset-y-0 right-0 pr-4 flex items-center text-xs font-bold text-[#1565C0]">
-                  กรัม (g)
-                </span>
-              </div>
-            </div>
-
-            {/* Grid 2 Cols: Current Stock & Min Stock Level */}
+            {/* Grid 2 Cols: Min Stock Level & Tare Weight */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              
-              {/* Current Stock */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  สต็อกสุทธิคงเหลือ (Current Stock)
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    required
-                    value={formData.currentStock || ''}
-                    onChange={(e) => setFormData({ ...formData, currentStock: parseFloat(e.target.value) || 0 })}
-                    className="w-full h-12 pl-4 pr-14 rounded-lg border border-slate-300 bg-white text-base font-bold text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent transition-all"
-                  />
-                  <span className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-xs text-slate-500 font-semibold">
-                    {formData.unit}
-                  </span>
-                </div>
-              </div>
 
               {/* Min Stock Level */}
               <div>
@@ -268,6 +301,28 @@ export function IngredientModal({
                   />
                   <span className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-xs text-slate-500 font-semibold">
                     {formData.unit}
+                  </span>
+                </div>
+              </div>
+
+              {/* Tare Weight */}
+              <div>
+                <label className="flex items-center space-x-1 text-xs font-semibold text-slate-700 mb-1.5">
+                  <Scale className="w-3.5 h-3.5 text-[#1565C0]" />
+                  <span>น้ำหนักภาชนะเปล่า (Tare Weight)</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    placeholder="0.0"
+                    value={formData.tareWeight || ''}
+                    onChange={(e) => setFormData({ ...formData, tareWeight: parseFloat(e.target.value) || 0 })}
+                    className="w-full h-12 pl-4 pr-12 rounded-lg border border-slate-300 bg-white text-sm text-[#1565C0] focus:outline-none focus:ring-2 focus:ring-[#1565C0] focus:border-transparent transition-all"
+                  />
+                  <span className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-xs text-slate-500">
+                    กรัม (g)
                   </span>
                 </div>
               </div>

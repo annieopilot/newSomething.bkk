@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useTransition } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { Header } from '@/components/dashboard/Header';
 import { SummaryCards } from '@/components/dashboard/SummaryCards';
 import { IngredientTable } from '@/components/dashboard/IngredientTable';
@@ -8,6 +9,7 @@ import { IngredientModal } from '@/components/dashboard/IngredientModal';
 import { DeleteConfirmDialog } from '@/components/dashboard/DeleteConfirmDialog';
 import { TareScaleModal } from '@/components/dashboard/TareScaleModal';
 import { SupabaseConfigModal } from '@/components/dashboard/SupabaseConfigModal';
+import { useAuthSession } from '@/components/auth/useAuthSession';
 import { Ingredient, IngredientInput, InventoryStats, InventoryTab } from '@/types/ingredient';
 import { 
   getIngredients, 
@@ -21,6 +23,12 @@ import {
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function StockDashboardPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { user, status: authStatus, signOut } = useAuthSession();
+  const isAuthenticated = authStatus === 'authenticated';
+  const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
+
   const [activeTab, setActiveTab] = useState<InventoryTab>('supplies');
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [stats, setStats] = useState<InventoryStats>({
@@ -60,7 +68,49 @@ export default function StockDashboardPage() {
     setToast({ message, type });
     setTimeout(() => {
       setToast(null);
-    }, 3500);
+    }, type === 'error' ? 7000 : 3500);
+  };
+
+  // Auth: พาไปหน้าล็อกอินแล้วกลับมาหน้าเดิมหลังล็อกอินสำเร็จ
+  const goToLogin = useCallback(() => {
+    router.push(`/login?next=${encodeURIComponent(pathname || '/')}`);
+  }, [router, pathname]);
+
+  // ป้องกันการเปิดฟอร์ม/ปุ่มแก้ไขเมื่อยังไม่ล็อกอิน (ฝั่ง server และ RLS ตรวจสิทธิ์ซ้ำอีกชั้น)
+  const requireAuth = (): boolean => {
+    if (isAuthenticated) return true;
+    if (authStatus === 'loading') {
+      showToast('กำลังตรวจสอบสถานะการเข้าสู่ระบบ กรุณาลองอีกครั้ง', 'error');
+      return false;
+    }
+    showToast('กรุณาเข้าสู่ระบบก่อนแก้ไขข้อมูล', 'error');
+    goToLogin();
+    return false;
+  };
+
+  const handleWriteError = (res: { error?: string; code?: string }, fallback: string) => {
+    showToast(res.error || fallback, 'error');
+    if (res.code === 'UNAUTHENTICATED') goToLogin();
+  };
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await signOut();
+      // ปิดหน้าต่างแก้ไขทั้งหมดหลังออกจากระบบ
+      setIsModalOpen(false);
+      setSelectedIngredient(null);
+      setIsDeleteDialogOpen(false);
+      setIngredientToDelete(null);
+      setIsScaleModalOpen(false);
+      setIngredientForScale(null);
+      showToast('ออกจากระบบเรียบร้อยแล้ว');
+      router.refresh();
+    } catch (error) {
+      showToast('ไม่สามารถออกจากระบบได้ กรุณาลองใหม่', 'error');
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
 
   // Fetch Data Function
@@ -113,7 +163,7 @@ export default function StockDashboardPage() {
           loadData();
           return true;
         } else {
-          showToast(res.error || 'เกิดข้อผิดพลาดในการแก้ไข', 'error');
+          handleWriteError(res, 'เกิดข้อผิดพลาดในการแก้ไข');
           return false;
         }
       } else {
@@ -123,7 +173,7 @@ export default function StockDashboardPage() {
           loadData();
           return true;
         } else {
-          showToast(res.error || 'เกิดข้อผิดพลาดในการบันทึก', 'error');
+          handleWriteError(res, 'เกิดข้อผิดพลาดในการบันทึก');
           return false;
         }
       }
@@ -144,7 +194,7 @@ export default function StockDashboardPage() {
         setIngredientToDelete(null);
         loadData();
       } else {
-        showToast(res.error || 'ไม่สามารถลบรายการได้', 'error');
+        handleWriteError(res, 'ไม่สามารถลบรายการได้');
       }
     } catch (error) {
       showToast('เกิดข้อผิดพลาดในการลบรายการ', 'error');
@@ -153,11 +203,14 @@ export default function StockDashboardPage() {
 
   // Action: Quick Adjust Stock
   const handleQuickAdjust = async (ingredient: Ingredient, amount: number, mode: 'add' | 'subtract') => {
+    if (!requireAuth()) return;
     try {
       const res = await quickAdjustStock(ingredient.id, amount, mode, ingredient.sourceTable);
       if (res.success && res.newStock !== undefined) {
         showToast(`ปรับสต็อก "${ingredient.name}" เป็น ${res.newStock} ${ingredient.unit}`);
         loadData();
+      } else {
+        handleWriteError(res, 'ไม่สามารถปรับยอดสต็อกได้');
       }
     } catch (error) {
       showToast('ไม่สามารถปรับยอดสต็อกได้', 'error');
@@ -174,7 +227,7 @@ export default function StockDashboardPage() {
         loadData();
         return true;
       } else {
-        showToast(res.error || 'ไม่สามารถอัปเดตสต็อกได้', 'error');
+        handleWriteError(res, 'ไม่สามารถอัปเดตสต็อกได้');
         return false;
       }
     } catch (error) {
@@ -214,10 +267,12 @@ export default function StockDashboardPage() {
           setSelectedCategory('all');
         }}
         onAddNew={() => {
+          if (!requireAuth()) return;
           setSelectedIngredient(null);
           setIsModalOpen(true);
         }}
         onOpenScaleModal={() => {
+          if (!requireAuth()) return;
           setIngredientForScale(ingredients[0] || null);
           setIsScaleModalOpen(true);
         }}
@@ -226,6 +281,11 @@ export default function StockDashboardPage() {
         totalLowStock={stats.lowStockCount + stats.outOfStockCount}
         isSupabaseConnected={isSupabaseConnected}
         onOpenSupabaseConfig={() => setIsSupabaseConfigOpen(true)}
+        authStatus={authStatus}
+        userEmail={user?.email}
+        onLogin={goToLogin}
+        onLogout={handleLogout}
+        isLoggingOut={isLoggingOut}
       />
 
       {/* Main Container */}
@@ -249,14 +309,17 @@ export default function StockDashboardPage() {
           statusFilter={statusFilter}
           onStatusFilterChange={(s) => setStatusFilter(s)}
           onEdit={(item) => {
+            if (!requireAuth()) return;
             setSelectedIngredient(item);
             setIsModalOpen(true);
           }}
           onDelete={(item) => {
+            if (!requireAuth()) return;
             setIngredientToDelete(item);
             setIsDeleteDialogOpen(true);
           }}
           onOpenScaleModal={(item) => {
+            if (!requireAuth()) return;
             setIngredientForScale(item);
             setIsScaleModalOpen(true);
           }}

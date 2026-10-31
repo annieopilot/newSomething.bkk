@@ -410,7 +410,7 @@ export function IngredientTable({
             return (
               <div
                 key={item.id}
-                className={`rounded-2xl border p-3.5 sm:p-4 bg-white transition-all shadow-xs ${
+                className={`rounded-2xl border p-3.5 sm:p-4 bg-white transition-colors shadow-xs [content-visibility:auto] [contain-intrinsic-size:auto_240px] ${
                   status === 'out_of_stock'
                     ? 'border-[#C62828]/40 ring-1 ring-[#C62828]/20'
                     : status === 'low_stock'

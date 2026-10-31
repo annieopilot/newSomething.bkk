@@ -1,6 +1,7 @@
 'use server';
 
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { isSupabaseConfigured } from '@/lib/supabase';
+import { supabase, getAuthenticatedClient } from '@/lib/supabase-server';
 import { Ingredient, IngredientInput, InventoryStats, InventoryTab } from '@/types/ingredient';
 import { revalidatePath } from 'next/cache';
 
@@ -185,18 +186,62 @@ export async function getInventoryStats(tab: InventoryTab = 'supplies'): Promise
   }
 }
 
+type WriteOperation = 'insert' | 'update' | 'delete';
+
+type WriteResult = { success: boolean; error?: string; code?: 'UNAUTHENTICATED' | 'RLS_DENIED' };
+
+const WRITE_OPERATION_LABEL: Record<WriteOperation, string> = {
+  insert: 'เพิ่ม',
+  update: 'แก้ไข',
+  delete: 'ลบ',
+};
+
+const UNAUTHENTICATED_RESULT: WriteResult = {
+  success: false,
+  code: 'UNAUTHENTICATED',
+  error: 'กรุณาเข้าสู่ระบบก่อนแก้ไขข้อมูล',
+};
+
+/**
+ * แปลง error จาก Supabase ให้อ่านเข้าใจได้ และระบุตาราง/คำสั่งที่ต้องเพิ่ม RLS policy
+ */
+function toWriteError(error: any, table: string, operation: WriteOperation, fallback: string): WriteResult {
+  const message: string = error?.message || '';
+  if (error?.code === '42501' || /row-level security|permission denied/i.test(message)) {
+    return {
+      success: false,
+      code: 'RLS_DENIED',
+      error: `ไม่มีสิทธิ์${WRITE_OPERATION_LABEL[operation]}ข้อมูลในตาราง "${table}" (ถูกปฏิเสธโดย Row Level Security) — ต้องเพิ่ม policy ${operation.toUpperCase()} สำหรับ role authenticated บนตาราง ${table} ใน Supabase`,
+    };
+  }
+  return { success: false, error: message || fallback };
+}
+
+/**
+ * UPDATE/DELETE ที่ RLS ไม่อนุญาตจะไม่ error แต่ไม่มีแถวใดถูกเปลี่ยน จึงต้องตรวจจำนวนแถวด้วย
+ */
+function noRowsAffectedError(table: string, operation: WriteOperation): WriteResult {
+  return {
+    success: false,
+    code: 'RLS_DENIED',
+    error: `ไม่มีรายการใดถูก${WRITE_OPERATION_LABEL[operation]}ในตาราง "${table}" — รายการอาจถูกลบไปแล้ว หรือ Row Level Security ไม่อนุญาต (ต้องมี policy SELECT และ ${operation.toUpperCase()} สำหรับ role authenticated บนตาราง ${table})`,
+  };
+}
+
 /**
  * สร้างรายการใหม่ลงใน Supabase
  */
 export async function createIngredient(
   data: IngredientInput
-): Promise<{ success: boolean; data?: Ingredient; error?: string }> {
+): Promise<WriteResult & { data?: Ingredient }> {
+  const targetTable = data.sourceTable || 'supplies';
   try {
     if (!data.name || data.name.trim() === '') {
       return { success: false, error: 'กรุณากรอกชื่อวัตถุดิบ/สินค้า' };
     }
 
-    const targetTable = data.sourceTable || 'supplies';
+    const auth = await getAuthenticatedClient();
+    if (!auth) return UNAUTHENTICATED_RESULT;
 
     if (targetTable === 'supplies') {
       const payload = {
@@ -206,11 +251,11 @@ export async function createIngredient(
         purchase_price: Number(data.costPerUnit) || 0,
         cost_per_unit: Number(data.costPerUnit) || 0,
         stock_quantity: Number(data.currentStock) || 0,
-        package_quantity: 1,
+        package_quantity: Number(data.packageQuantity) || 1,
       };
 
-      const { data: created, error } = await supabase.from('supplies').insert([payload]).select().single();
-      if (error) throw error;
+      const { error } = await auth.client.from('supplies').insert([payload]);
+      if (error) return toWriteError(error, 'supplies', 'insert', 'เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Supabase');
       revalidatePath('/');
       return { success: true };
     } else {
@@ -225,14 +270,14 @@ export async function createIngredient(
         sale_type: 'ราคาต่อหน่วย',
       };
 
-      const { data: created, error } = await supabase.from('stock').insert([payload]).select().single();
-      if (error) throw error;
+      const { error } = await auth.client.from('stock').insert([payload]);
+      if (error) return toWriteError(error, 'stock', 'insert', 'เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Supabase');
       revalidatePath('/');
       return { success: true };
     }
   } catch (error: any) {
     console.error('Failed to create ingredient:', error);
-    return { success: false, error: error.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Supabase' };
+    return toWriteError(error, targetTable, 'insert', 'เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Supabase');
   }
 }
 
@@ -243,12 +288,15 @@ export async function updateIngredient(
   id: string,
   data: Partial<IngredientInput>,
   sourceTable: 'supplies' | 'stock' = 'supplies'
-): Promise<{ success: boolean; error?: string }> {
+): Promise<WriteResult> {
   try {
+    const auth = await getAuthenticatedClient();
+    if (!auth) return UNAUTHENTICATED_RESULT;
+
     const numId = isNaN(Number(id)) ? id : Number(id);
+    const updatePayload: any = {};
 
     if (sourceTable === 'supplies') {
-      const updatePayload: any = {};
       if (data.name !== undefined) updatePayload.item_name = data.name.trim();
       if (data.category !== undefined) updatePayload.category = data.category.trim();
       if (data.unit !== undefined) updatePayload.unit = data.unit.trim();
@@ -257,11 +305,8 @@ export async function updateIngredient(
         updatePayload.purchase_price = Number(data.costPerUnit);
       }
       if (data.currentStock !== undefined) updatePayload.stock_quantity = Number(data.currentStock);
-
-      const { error } = await supabase.from('supplies').update(updatePayload).eq('id', numId);
-      if (error) throw error;
+      if (data.packageQuantity !== undefined) updatePayload.package_quantity = Number(data.packageQuantity);
     } else {
-      const updatePayload: any = {};
       if (data.name !== undefined) updatePayload.item_name = data.name.trim();
       if (data.category !== undefined) updatePayload.category = data.category.trim();
       if (data.unit !== undefined) updatePayload.unit = data.unit.trim();
@@ -269,16 +314,20 @@ export async function updateIngredient(
       if (data.costPerUnit !== undefined) updatePayload.avg_cost = Number(data.costPerUnit);
       if (data.currentStock !== undefined) updatePayload.stock_quantity = Number(data.currentStock);
       if (data.barcode !== undefined) updatePayload.barcode = data.barcode.trim();
-
-      const { error } = await supabase.from('stock').update(updatePayload).eq('id', numId);
-      if (error) throw error;
     }
+
+    const { error, count } = await auth.client
+      .from(sourceTable)
+      .update(updatePayload, { count: 'exact' })
+      .eq('id', numId);
+    if (error) return toWriteError(error, sourceTable, 'update', 'เกิดข้อผิดพลาดในการแก้ไขข้อมูล');
+    if (count === 0) return noRowsAffectedError(sourceTable, 'update');
 
     revalidatePath('/');
     return { success: true };
   } catch (error: any) {
     console.error('Failed to update ingredient in Supabase:', error);
-    return { success: false, error: error.message || 'เกิดข้อผิดพลาดในการแก้ไขข้อมูล' };
+    return toWriteError(error, sourceTable, 'update', 'เกิดข้อผิดพลาดในการแก้ไขข้อมูล');
   }
 }
 
@@ -288,16 +337,24 @@ export async function updateIngredient(
 export async function deleteIngredient(
   id: string,
   sourceTable: 'supplies' | 'stock' = 'supplies'
-): Promise<{ success: boolean; error?: string }> {
+): Promise<WriteResult> {
   try {
+    const auth = await getAuthenticatedClient();
+    if (!auth) return UNAUTHENTICATED_RESULT;
+
     const numId = isNaN(Number(id)) ? id : Number(id);
-    const { error } = await supabase.from(sourceTable).delete().eq('id', numId);
-    if (error) throw error;
+    const { error, count } = await auth.client
+      .from(sourceTable)
+      .delete({ count: 'exact' })
+      .eq('id', numId);
+    if (error) return toWriteError(error, sourceTable, 'delete', 'เกิดข้อผิดพลาดในการลบข้อมูล');
+    if (count === 0) return noRowsAffectedError(sourceTable, 'delete');
+
     revalidatePath('/');
     return { success: true };
   } catch (error: any) {
     console.error('Failed to delete ingredient from Supabase:', error);
-    return { success: false, error: error.message || 'เกิดข้อผิดพลาดในการลบข้อมูล' };
+    return toWriteError(error, sourceTable, 'delete', 'เกิดข้อผิดพลาดในการลบข้อมูล');
   }
 }
 
@@ -309,16 +366,24 @@ export async function quickAdjustStock(
   amount: number,
   mode: 'set' | 'add' | 'subtract',
   sourceTable: 'supplies' | 'stock' = 'supplies'
-): Promise<{ success: boolean; newStock?: number; error?: string }> {
+): Promise<WriteResult & { newStock?: number }> {
   try {
+    const auth = await getAuthenticatedClient();
+    if (!auth) return UNAUTHENTICATED_RESULT;
+
     const numId = isNaN(Number(id)) ? id : Number(id);
-    const { data: item, error: fetchErr } = await supabase
+    const { data: item, error: fetchErr } = await auth.client
       .from(sourceTable)
       .select('stock_quantity')
       .eq('id', numId)
       .single();
 
-    if (fetchErr || !item) throw new Error('ไม่พบรายการในฐานข้อมูล');
+    if (fetchErr || !item) {
+      return {
+        success: false,
+        error: `ไม่พบรายการในตาราง "${sourceTable}" (หรือ role authenticated ยังไม่มี policy SELECT บนตารางนี้)`,
+      };
+    }
     const currentStock = Number(item.stock_quantity) || 0;
 
     let newStock = currentStock;
@@ -326,17 +391,18 @@ export async function quickAdjustStock(
     else if (mode === 'add') newStock = currentStock + amount;
     else if (mode === 'subtract') newStock = Math.max(0, currentStock - amount);
 
-    const { error: updateErr } = await supabase
+    const { error: updateErr, count } = await auth.client
       .from(sourceTable)
-      .update({ stock_quantity: newStock })
+      .update({ stock_quantity: newStock }, { count: 'exact' })
       .eq('id', numId);
 
-    if (updateErr) throw updateErr;
+    if (updateErr) return toWriteError(updateErr, sourceTable, 'update', 'เกิดข้อผิดพลาดในการปรับยอดสต็อก');
+    if (count === 0) return noRowsAffectedError(sourceTable, 'update');
 
     revalidatePath('/');
     return { success: true, newStock };
   } catch (error: any) {
     console.error('Failed to adjust stock:', error);
-    return { success: false, error: error.message || 'เกิดข้อผิดพลาดในการปรับยอดสต็อก' };
+    return toWriteError(error, sourceTable, 'update', 'เกิดข้อผิดพลาดในการปรับยอดสต็อก');
   }
 }

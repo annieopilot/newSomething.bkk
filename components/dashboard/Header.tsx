@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Coffee, Plus, Scale, RefreshCw, Layers, ShoppingBag, BarChart3, AlertCircle, Database } from 'lucide-react';
+import React from 'react';
+import { Coffee, Plus, Scale, RefreshCw, Layers, ShoppingBag, BarChart3, AlertCircle, Database, LogIn, LogOut, Loader2 } from 'lucide-react';
 
 import { InventoryTab } from '@/types/ingredient';
+import type { AuthStatus } from '@/components/auth/useAuthSession';
 
 interface HeaderProps {
   onAddNew: () => void;
@@ -15,6 +16,11 @@ interface HeaderProps {
   onOpenSupabaseConfig: () => void;
   activeTab: InventoryTab;
   onTabChange: (tab: InventoryTab) => void;
+  authStatus: AuthStatus;
+  userEmail?: string | null;
+  onLogin: () => void;
+  onLogout: () => void;
+  isLoggingOut: boolean;
 }
 
 export function Header({
@@ -27,30 +33,12 @@ export function Header({
   onOpenSupabaseConfig,
   activeTab,
   onTabChange,
+  authStatus,
+  userEmail,
+  onLogin,
+  onLogout,
+  isLoggingOut,
 }: HeaderProps) {
-  const [currentTime, setCurrentTime] = useState<string>('');
-
-  useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      setCurrentTime(
-        now.toLocaleDateString('th-TH', {
-          weekday: 'short',
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        })
-      );
-    };
-
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
   return (
     <header className="bg-[#FFFFFF] border-b border-slate-200 sticky top-0 z-30 shadow-xs">
       {/* Top Bar */}
@@ -159,12 +147,45 @@ export function Header({
             </button>
           </div>
 
-          {totalLowStock > 0 && (
-            <div className="hidden sm:flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-[#E65100]/10 text-[#E65100] text-xs font-bold border border-[#E65100]/20 shrink-0">
-              <AlertCircle className="w-3.5 h-3.5 text-[#E65100]" />
-              <span>ใกล้หมด {totalLowStock} รายการ</span>
-            </div>
-          )}
+          <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
+            {totalLowStock > 0 && (
+              <div className="hidden sm:flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-[#E65100]/10 text-[#E65100] text-xs font-bold border border-[#E65100]/20 shrink-0">
+                <AlertCircle className="w-3.5 h-3.5 text-[#E65100]" />
+                <span>ใกล้หมด {totalLowStock} รายการ</span>
+              </div>
+            )}
+
+            {/* Auth Session Control */}
+            {authStatus === 'loading' ? (
+              <div className="h-9 px-3 flex items-center rounded-lg border border-slate-200 bg-white text-slate-500 text-xs font-medium">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              </div>
+            ) : authStatus === 'authenticated' ? (
+              <div className="flex items-center space-x-1.5">
+                <span className="hidden md:inline max-w-48 truncate text-xs font-medium text-slate-600" title={userEmail || undefined}>
+                  {userEmail}
+                </span>
+                <button
+                  onClick={onLogout}
+                  disabled={isLoggingOut}
+                  title="ออกจากระบบ"
+                  className="h-9 px-2.5 sm:px-3 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-100 text-xs font-semibold flex items-center space-x-1.5 touch-press transition-colors disabled:opacity-50"
+                >
+                  {isLoggingOut ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LogOut className="w-3.5 h-3.5" />}
+                  <span className="hidden sm:inline">{isLoggingOut ? 'กำลังออก...' : 'ออกจากระบบ'}</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={onLogin}
+                title="เข้าสู่ระบบเพื่อแก้ไขข้อมูล"
+                className="h-9 px-2.5 sm:px-3 rounded-lg border border-[#8B5A2B]/30 bg-[#8B5A2B]/5 hover:bg-[#8B5A2B]/10 active:bg-[#8B5A2B]/15 text-[#8B5A2B] text-xs font-semibold flex items-center space-x-1.5 touch-press transition-colors"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">เข้าสู่ระบบ</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </header>

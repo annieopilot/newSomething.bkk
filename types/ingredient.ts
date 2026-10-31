@@ -30,6 +30,7 @@ export interface IngredientInput {
   price?: number;
   barcode?: string;
   supplier?: string;
+  packageQuantity?: number;
   notes?: string;
   sourceTable?: 'supplies' | 'stock';
 }
