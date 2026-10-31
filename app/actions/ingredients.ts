@@ -406,3 +406,43 @@ export async function quickAdjustStock(
     return toWriteError(error, sourceTable, 'update', 'เกิดข้อผิดพลาดในการปรับยอดสต็อก');
   }
 }
+
+/**
+ * บันทึกยอดนับสต็อกหลายรายการพร้อมกัน (หน้า /count) — ตรวจสิทธิ์ครั้งเดียว แล้วอัปเดตทีละแถว
+ * คืนรายการ id ที่บันทึกไม่สำเร็จ เพื่อให้หน้าเว็บเก็บค่าที่ยังไม่ได้บันทึกไว้ให้ลองใหม่
+ */
+export async function saveStockCounts(
+  counts: { id: string; currentStock: number }[],
+  sourceTable: 'supplies' | 'stock'
+): Promise<WriteResult & { savedIds?: string[]; failedIds?: string[] }> {
+  try {
+    const auth = await getAuthenticatedClient();
+    if (!auth) return UNAUTHENTICATED_RESULT;
+
+    const results = await Promise.all(
+      counts.map(async ({ id, currentStock }) => {
+        const numId = isNaN(Number(id)) ? id : Number(id);
+        const { error, count } = await auth.client
+          .from(sourceTable)
+          .update({ stock_quantity: Math.max(0, Number(currentStock) || 0) }, { count: 'exact' })
+          .eq('id', numId);
+        if (error) return { id, failure: toWriteError(error, sourceTable, 'update', 'เกิดข้อผิดพลาดในการบันทึกยอดนับ') };
+        if (count === 0) return { id, failure: noRowsAffectedError(sourceTable, 'update') };
+        return { id, failure: null };
+      })
+    );
+
+    const savedIds = results.filter((r) => !r.failure).map((r) => r.id);
+    const failedIds = results.filter((r) => r.failure).map((r) => r.id);
+    if (savedIds.length > 0) revalidatePath('/');
+
+    if (failedIds.length > 0) {
+      const firstFailure = results.find((r) => r.failure)!.failure!;
+      return { ...firstFailure, success: false, savedIds, failedIds };
+    }
+    return { success: true, savedIds, failedIds };
+  } catch (error: any) {
+    console.error('Failed to save stock counts:', error);
+    return toWriteError(error, sourceTable, 'update', 'เกิดข้อผิดพลาดในการบันทึกยอดนับ');
+  }
+}

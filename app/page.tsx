@@ -20,7 +20,8 @@ import {
   quickAdjustStock,
   getDatabaseConnectionStatus
 } from '@/app/actions/ingredients';
-import { CheckCircle2, AlertCircle } from 'lucide-react';
+import Link from 'next/link';
+import { CheckCircle2, AlertCircle, ClipboardList } from 'lucide-react';
 
 export default function StockDashboardPage() {
   const router = useRouter();
@@ -291,6 +292,15 @@ export default function StockDashboardPage() {
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-3.5 sm:py-6">
         
+        {/* โหมดนับสต็อก (หน้าแยกสำหรับกรอกยอดทีละบรรทัด) */}
+        <Link
+          href="/count"
+          className="mb-3.5 sm:mb-5 h-12 w-full sm:w-auto sm:inline-flex px-5 rounded-xl bg-[#8B5A2B] active:bg-[#74491f] text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-xs touch-press transition-colors"
+        >
+          <ClipboardList className="w-4 h-4" />
+          <span>นับสต็อก</span>
+        </Link>
+
         {/* Summary Cards */}
         <SummaryCards
           stats={stats}
