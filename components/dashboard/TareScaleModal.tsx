@@ -50,9 +50,9 @@ export function TareScaleModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 overscroll-contain">
       <div 
-        className="relative w-full max-w-lg bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92dvh] flex flex-col animate-in slide-in-from-bottom duration-200"
+        className="relative w-full max-w-lg bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92dvh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         
@@ -81,7 +81,7 @@ export function TareScaleModal({
         </div>
 
         {/* Modal Body */}
-        <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
+        <div className="p-4 sm:p-6 space-y-4 overflow-y-auto overscroll-contain flex-1">
           
           {/* Select Ingredient Dropdown */}
           <div>
@@ -147,7 +147,7 @@ export function TareScaleModal({
                     placeholder="เช่น 850"
                     value={grossWeight}
                     onChange={(e) => setGrossWeight(e.target.value)}
-                    autoFocus
+                    autoFocus={window.matchMedia('(pointer: fine)').matches}
                     className="w-full h-14 pl-4 pr-16 rounded-xl border-2 border-[#1565C0]/40 bg-white text-2xl font-bold text-[#1A1A1A] placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-[#1565C0] focus:border-transparent transition-all"
                   />
                   <span className="absolute inset-y-0 right-0 pr-4 flex items-center text-sm font-bold text-slate-500">

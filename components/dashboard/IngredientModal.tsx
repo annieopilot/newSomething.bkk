@@ -122,9 +122,9 @@ export function IngredientModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 overscroll-contain">
       <div 
-        className="relative w-full max-w-2xl bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92dvh] flex flex-col animate-in slide-in-from-bottom duration-200"
+        className="relative w-full max-w-2xl bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92dvh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         
@@ -154,7 +154,7 @@ export function IngredientModal({
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-          <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1">
+          <div className="p-4 sm:p-6 space-y-4 overflow-y-auto overscroll-contain flex-1">
             
             {errorMessage && (
               <div className="p-3.5 rounded-lg bg-[#C62828]/10 border border-[#C62828]/20 text-[#C62828] text-sm flex items-center space-x-2">
@@ -213,7 +213,7 @@ export function IngredientModal({
                   step="0.1"
                   min="0"
                   required={stockMode === 'set'}
-                  autoFocus={isEditMode}
+                  autoFocus={isEditMode && window.matchMedia('(pointer: fine)').matches}
                   onFocus={(e) => e.target.select()}
                   placeholder={stockMode === 'set' ? '0' : `จำนวนที่${activeMode.label}`}
                   value={stockMode === 'set' ? formData.currentStock || '' : stockAmount || ''}
