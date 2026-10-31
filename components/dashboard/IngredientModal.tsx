@@ -214,6 +214,7 @@ export function IngredientModal({
                   min="0"
                   required={stockMode === 'set'}
                   autoFocus={isEditMode && window.matchMedia('(pointer: fine)').matches}
+                  enterKeyHint="done"
                   onFocus={(e) => e.target.select()}
                   placeholder={stockMode === 'set' ? '0' : `จำนวนที่${activeMode.label}`}
                   value={stockMode === 'set' ? formData.currentStock || '' : stockAmount || ''}

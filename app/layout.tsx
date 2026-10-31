@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Prompt } from "next/font/google";
 import "./globals.css";
 
@@ -18,6 +18,13 @@ const prompt = Prompt({
 export const metadata: Metadata = {
   title: "Coffee POS - Stock Management System",
   description: "ระบบจัดการสต็อกวัตถุดิบและภาชนะเปล่า (Tare Weight) สำหรับร้านกาแฟ",
+};
+
+// ให้คีย์บอร์ดมือถือขึ้นมาทับหน้าเว็บ แทนการย่อหน้าจอ (ไม่ต้องคำนวณ layout ใหม่ทุกเฟรมตอนคีย์บอร์ดเลื่อนขึ้น)
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  interactiveWidget: "resizes-visual",
 };
 
 export default function RootLayout({
