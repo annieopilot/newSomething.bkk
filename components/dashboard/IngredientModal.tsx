@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Scale, Save, AlertCircle } from 'lucide-react';
-import { Ingredient, IngredientInput, InventoryTab, COMMON_CATEGORIES, COMMON_UNITS } from '@/types/ingredient';
+import { Ingredient, IngredientInput, InventoryLookups, EMPTY_LOOKUPS } from '@/types/ingredient';
 
 type StockMode = 'add' | 'subtract' | 'set';
 
@@ -18,8 +18,23 @@ interface IngredientModalProps {
   onSubmit: (data: IngredientInput) => Promise<boolean>;
   initialData?: Ingredient | null;
   loading: boolean;
-  activeTab?: InventoryTab;
+  lookups?: InventoryLookups; // หมวด / หน่วย / ผู้ขาย จากฐานข้อมูล
 }
+
+const DEFAULT_UNIT = 'ชิ้น';
+
+const emptyForm = (): IngredientInput => ({
+  name: '',
+  category: '',
+  unit: DEFAULT_UNIT,
+  currentStock: 0,
+  tareWeight: 0,
+  minStockLevel: 0,
+  costPerUnit: 0,
+  barcode: '',
+  supplier: '',
+  notes: '',
+});
 
 export function IngredientModal({
   isOpen,
@@ -27,24 +42,11 @@ export function IngredientModal({
   onSubmit,
   initialData,
   loading,
-  activeTab = 'supplies',
+  lookups = EMPTY_LOOKUPS,
 }: IngredientModalProps) {
   const isEditMode = Boolean(initialData);
 
-  const [formData, setFormData] = useState<IngredientInput>({
-    name: '',
-    category: activeTab === 'supplies' ? 'Packaging' : 'Coffee',
-    unit: activeTab === 'supplies' ? 'ใบ' : 'Cup',
-    currentStock: 0,
-    tareWeight: 0,
-    minStockLevel: activeTab === 'supplies' ? 5 : 10,
-    costPerUnit: 0,
-    price: 0,
-    barcode: '',
-    supplier: '',
-    notes: '',
-    sourceTable: activeTab,
-  });
+  const [formData, setFormData] = useState<IngredientInput>(emptyForm);
 
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [stockMode, setStockMode] = useState<StockMode>('set');
@@ -63,38 +65,26 @@ export function IngredientModal({
     if (initialData) {
       setFormData({
         name: initialData.name,
-        category: initialData.category || (activeTab === 'supplies' ? 'Packaging' : 'Coffee'),
-        unit: initialData.unit,
+        category: initialData.category || '',
+        unit: initialData.unit || DEFAULT_UNIT,
         currentStock: initialData.currentStock,
         tareWeight: initialData.tareWeight || 0,
-        minStockLevel: initialData.minStockLevel || 5,
+        minStockLevel: initialData.minStockLevel || 0,
         costPerUnit: initialData.costPerUnit || 0,
-        price: initialData.price || 0,
         barcode: initialData.barcode || '',
         supplier: initialData.supplier || '',
         notes: initialData.notes || '',
-        sourceTable: initialData.sourceTable || activeTab,
       });
     } else {
-      setFormData({
-        name: '',
-        category: activeTab === 'supplies' ? 'Packaging' : 'Coffee',
-        unit: activeTab === 'supplies' ? 'ใบ' : 'Cup',
-        currentStock: 10,
-        tareWeight: 0,
-        minStockLevel: activeTab === 'supplies' ? 5 : 10,
-        costPerUnit: 0,
-        price: 0,
-        barcode: '',
-        supplier: '',
-        notes: '',
-        sourceTable: activeTab,
-      });
+      setFormData(emptyForm());
     }
     setErrorMessage('');
     setStockMode('set');
     setStockAmount(0);
-  }, [initialData, isOpen, activeTab]);
+  }, [initialData, isOpen]);
+
+  // หน่วยของรายการเดิมอาจไม่อยู่ในรายการตัวเลือก (เช่นโหลดตัวเลือกไม่สำเร็จ) ให้ยังเลือกค้างไว้ได้
+  const unitOptions = lookups.units.includes(formData.unit) ? lookups.units : [formData.unit, ...lookups.units];
 
   if (!isOpen) return null;
 
@@ -115,7 +105,16 @@ export function IngredientModal({
     }
 
     setErrorMessage('');
-    const success = await onSubmit({ ...formData, currentStock: resultingStock });
+    // รับเข้า/จ่ายออก → บันทึกเป็นประวัติสต็อกตามประเภท, แก้ไขยอด → ตั้งยอดใหม่ (ระบบบันทึกเป็นการนับสต็อก)
+    const success = await onSubmit(
+      isEditMode && stockMode !== 'set'
+        ? {
+            ...formData,
+            currentStock: baseStock,
+            stockMovement: { type: stockMode === 'add' ? 'purchase' : 'usage', quantity: stockAmount },
+          }
+        : { ...formData, currentStock: resultingStock }
+    );
     if (success) {
       onClose();
     }
@@ -249,17 +248,19 @@ export function IngredientModal({
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   หมวดหมู่วัตถุดิบ
                 </label>
-                <select
-                  value={formData.category || 'เมล็ดกาแฟ'}
+                <input
+                  type="text"
+                  list="ingredient-category-options"
+                  placeholder="เลือกหรือพิมพ์หมวดใหม่"
+                  value={formData.category || ''}
                   onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                   className="w-full h-12 px-3 rounded-lg border border-slate-300 bg-white text-sm text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent transition-all"
-                >
-                  {COMMON_CATEGORIES.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
+                />
+                <datalist id="ingredient-category-options">
+                  {lookups.categories.map((cat) => (
+                    <option key={cat} value={cat} />
                   ))}
-                </select>
+                </datalist>
               </div>
 
               {/* Unit */}
@@ -272,9 +273,9 @@ export function IngredientModal({
                   onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                   className="w-full h-12 px-3 rounded-lg border border-slate-300 bg-white text-sm text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent transition-all"
                 >
-                  {COMMON_UNITS.map((u) => (
-                    <option key={u.value} value={u.value}>
-                      {u.label}
+                  {unitOptions.map((unit) => (
+                    <option key={unit} value={unit}>
+                      {unit}
                     </option>
                   ))}
                 </select>
@@ -288,14 +289,13 @@ export function IngredientModal({
               {/* Min Stock Level */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  จุดเตือนของใกล้หมด (Min Stock Level)
+                  จุดสั่งซื้อ (เหลือเท่านี้ = ใกล้หมด)
                 </label>
                 <div className="relative">
                   <input
                     type="number"
                     step="0.1"
                     min="0"
-                    required
                     value={formData.minStockLevel || ''}
                     onChange={(e) => setFormData({ ...formData, minStockLevel: parseFloat(e.target.value) || 0 })}
                     className="w-full h-12 pl-4 pr-14 rounded-lg border border-slate-300 bg-white text-base font-bold text-[#E65100] focus:outline-none focus:ring-2 focus:ring-[#E65100] focus:border-transparent transition-all"
@@ -358,18 +358,24 @@ export function IngredientModal({
                 </label>
                 <input
                   type="text"
-                  placeholder="เช่น Monin Thailand, โรงคั่วกาแฟ"
+                  list="ingredient-supplier-options"
+                  placeholder="เลือกหรือพิมพ์ชื่อผู้ขายใหม่"
                   value={formData.supplier || ''}
                   onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
                   className="w-full h-12 px-3.5 rounded-lg border border-slate-300 bg-white text-sm text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent"
                 />
+                <datalist id="ingredient-supplier-options">
+                  {lookups.suppliers.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
               </div>
             </div>
 
             {/* Barcode / SKU */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                บาร์โค้ดสินค้า / SKU (ถ้ามี)
+                บาร์โค้ดสินค้า (ถ้ามี)
               </label>
               <input
                 type="text"

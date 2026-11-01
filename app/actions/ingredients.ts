@@ -1,9 +1,116 @@
 'use server';
 
 import { isSupabaseConfigured } from '@/lib/supabase';
-import { supabase, getAuthenticatedClient } from '@/lib/supabase-server';
-import { Ingredient, IngredientInput, InventoryStats, InventoryTab } from '@/types/ingredient';
+import { getAuthenticatedClient } from '@/lib/supabase-server';
+import {
+  Ingredient,
+  IngredientInput,
+  InventoryLookups,
+  InventoryStats,
+  EMPTY_LOOKUPS,
+  StockMovementInput,
+} from '@/types/ingredient';
 import { revalidatePath } from 'next/cache';
+
+/**
+ * ข้อมูลสต็อกอยู่ในตารางชุดใหม่ (supabase/inventory.sql):
+ *   items            — สินค้า/วัตถุดิบ
+ *   stock_movements  — ประวัติรับเข้า/ใช้/นับ (ยอดคงเหลือคำนวณจากตารางนี้ด้วย trigger)
+ *   v_inventory      — view สำหรับอ่าน (รวมหมวด หน่วย ผู้ขาย สถานะ)
+ * ทุกการอ่าน/เขียนใช้ session ของผู้ใช้ (role authenticated) → RLS ตรวจสิทธิ์ และ audit_log รู้ว่าใครแก้
+ */
+
+type Client = NonNullable<Awaited<ReturnType<typeof getAuthenticatedClient>>>['client'];
+
+type ErrorCode = 'UNAUTHENTICATED' | 'RLS_DENIED' | 'NOT_CONFIGURED';
+type WriteResult = { success: boolean; error?: string; code?: ErrorCode };
+type WriteOperation = 'insert' | 'update' | 'delete';
+
+const NOT_CONFIGURED: WriteResult = { success: false, code: 'NOT_CONFIGURED', error: 'ยังไม่ได้ตั้งค่า Supabase' };
+const UNAUTHENTICATED: WriteResult = {
+  success: false,
+  code: 'UNAUTHENTICATED',
+  error: 'กรุณาเข้าสู่ระบบก่อนใช้งาน',
+};
+
+const WRITE_OPERATION_LABEL: Record<WriteOperation, string> = {
+  insert: 'เพิ่ม',
+  update: 'แก้ไข',
+  delete: 'ลบ',
+};
+
+const EMPTY_STATS: InventoryStats = {
+  totalItems: 0,
+  lowStockCount: 0,
+  outOfStockCount: 0,
+  categoriesCount: 0,
+  totalEstimatedValue: 0,
+};
+
+/**
+ * แปลง error จาก Supabase ให้อ่านเข้าใจได้
+ */
+function toWriteError(error: any, table: string, operation: WriteOperation, fallback: string): WriteResult {
+  const message: string = error?.message || '';
+  if (error?.code === '42501' || /row-level security|permission denied/i.test(message)) {
+    return {
+      success: false,
+      code: 'RLS_DENIED',
+      error: `ไม่มีสิทธิ์${WRITE_OPERATION_LABEL[operation]}ข้อมูลในตาราง "${table}" (ถูกปฏิเสธโดย Row Level Security)`,
+    };
+  }
+  if (error?.code === '23505') {
+    return { success: false, error: 'ข้อมูลซ้ำกับรายการที่มีอยู่แล้ว (เช่น SKU หรือชื่อซ้ำ)' };
+  }
+  if (error?.code === '23514') {
+    return { success: false, error: 'ค่าที่กรอกไม่ถูกต้อง (เช่น ตัวเลขติดลบ)' };
+  }
+  return { success: false, error: message || fallback };
+}
+
+function noRowsAffectedError(table: string, operation: WriteOperation): WriteResult {
+  return {
+    success: false,
+    code: 'RLS_DENIED',
+    error: `ไม่มีรายการใดถูก${WRITE_OPERATION_LABEL[operation]}ในตาราง "${table}" — รายการอาจถูกลบไปแล้ว หรือไม่มีสิทธิ์`,
+  };
+}
+
+/** ตรวจ config + session ครั้งเดียว */
+async function requireClient(): Promise<{ client: Client } | { failure: WriteResult }> {
+  if (!isSupabaseConfigured) return { failure: NOT_CONFIGURED };
+  const auth = await getAuthenticatedClient();
+  if (!auth) return { failure: UNAUTHENTICATED };
+  return { client: auth.client };
+}
+
+const toNumber = (value: unknown): number => Number(value) || 0;
+const toId = (id: string): number => Number(id);
+
+function mapRow(row: any): Ingredient {
+  return {
+    id: String(row.id),
+    sku: row.sku ?? null,
+    name: row.name || '',
+    unit: row.unit || '',
+    unitCode: row.unit_code || '',
+    tareWeight: toNumber(row.tare_weight),
+    currentStock: toNumber(row.current_stock),
+    minStockLevel: toNumber(row.reorder_point),
+    suggestedOrderQty: toNumber(row.suggested_order_qty),
+    category: row.category ?? null,
+    costPerUnit: toNumber(row.cost_per_unit),
+    stockValue: toNumber(row.stock_value),
+    barcode: row.barcode ?? null,
+    supplier: row.supplier ?? null,
+    notes: row.notes ?? null,
+    packageQuantity: row.purchase_pack_size == null ? null : toNumber(row.purchase_pack_size),
+    status: row.status,
+    lastMovementAt: row.last_movement_at ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
 
 /**
  * ตรวจสอบว่าระบบกำลังเชื่อมต่อกับ Supabase หรือไม่
@@ -21,413 +128,312 @@ export async function getDatabaseConnectionStatus(): Promise<{
 }
 
 /**
- * ดึงรายการพัสดุและสต็อกจาก Supabase (รองรับทั้ง supplies และ stock)
+ * ดึงรายการสินค้าที่ใช้งานอยู่ (is_active) จาก v_inventory
  */
 export async function getIngredients(params?: {
-  tab?: InventoryTab;
   search?: string;
   category?: string;
   status?: 'all' | 'low' | 'out' | 'in_stock';
-  sortBy?: 'name' | 'currentStock' | 'tareWeight';
+  sortBy?: 'name' | 'currentStock' | 'category';
   sortOrder?: 'asc' | 'desc';
-}): Promise<{ success: boolean; data: Ingredient[]; provider: string; error?: string }> {
+}): Promise<{ success: boolean; data: Ingredient[]; provider: string; error?: string; code?: ErrorCode }> {
+  const { search, category, status = 'all', sortBy = 'name', sortOrder = 'asc' } = params || {};
+
+  const ctx = await requireClient();
+  if ('failure' in ctx) return { ...ctx.failure, success: false, data: [], provider: 'supabase' };
+
   try {
-    const {
-      tab = 'supplies',
-      search,
-      category,
-      status = 'all',
-      sortBy = 'name',
-      sortOrder = 'asc',
-    } = params || {};
+    let query = ctx.client.from('v_inventory').select('*').eq('is_active', true);
 
-    if (!isSupabaseConfigured) {
-      return { success: false, data: [], provider: 'none', error: 'ยังไม่ได้ตั้งค่า Supabase' };
+    if (category && category !== 'all') query = query.eq('category', category);
+    if (search && search.trim() !== '') {
+      // ค้นได้ทั้งชื่อ, SKU และบาร์โค้ด (ตัด , ( ) ออกเพราะเป็นตัวคั่นของ .or())
+      const term = search.trim().replace(/[,()]/g, ' ');
+      query = query.or(`name.ilike.%${term}%,sku.ilike.%${term}%,barcode.ilike.%${term}%`);
     }
+    if (status === 'out') query = query.eq('status', 'out');
+    else if (status === 'low') query = query.eq('status', 'low');
+    else if (status === 'in_stock') query = query.eq('status', 'ok');
 
-    let items: Ingredient[] = [];
+    const { data, error } = await query;
+    if (error) throw error;
 
-    if (tab === 'supplies') {
-      // ดึงจากตาราง supplies
-      let query = supabase.from('supplies').select('*');
-
-      if (category && category !== 'all') {
-        query = query.eq('category', category);
-      }
-      if (search && search.trim() !== '') {
-        query = query.ilike('item_name', `%${search.trim()}%`);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      items = (data || []).map((row) => ({
-        id: String(row.id),
-        name: row.item_name || '',
-        unit: row.unit || 'ชิ้น',
-        tareWeight: 0, // จุดประสงค์เดิม: ระบบรองรับ Tare Weight (รอเพิ่ม column ใน DB ภายหลัง)
-        currentStock: Number(row.stock_quantity) || 0,
-        minStockLevel: 5, // จุดเตือนเบื้องต้น
-        category: row.category || 'Supply',
-        costPerUnit: Number(row.cost_per_unit) || Number(row.purchase_price) || 0,
-        price: Number(row.purchase_price) || 0,
-        packageQuantity: Number(row.package_quantity) || 1,
-        sourceTable: 'supplies',
-        createdAt: row.created_at,
-        notes: row.package_quantity ? `บรรจุแพ็คละ ${row.package_quantity} ${row.unit}` : null,
-      }));
-    } else {
-      // ดึงจากตาราง stock
-      let query = supabase.from('stock').select('*');
-
-      if (category && category !== 'all') {
-        query = query.eq('category', category);
-      }
-      if (search && search.trim() !== '') {
-        query = query.ilike('item_name', `%${search.trim()}%`);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      items = (data || []).map((row) => ({
-        id: String(row.id),
-        name: row.item_name || '',
-        unit: row.unit || 'Cup',
-        tareWeight: 0, // จุดประสงค์เดิม: ระบบรองรับ Tare Weight (รอเพิ่ม column ใน DB ภายหลัง)
-        currentStock: Number(row.stock_quantity) || 0,
-        minStockLevel: 10,
-        category: row.category || 'Coffee',
-        costPerUnit: Number(row.avg_cost) || 0,
-        price: Number(row.price) || 0,
-        barcode: row.barcode && row.barcode !== '-' ? row.barcode : null,
-        sourceTable: 'stock',
-        createdAt: row.created_at,
-        notes: row.profit_margin ? `Margin: ${row.profit_margin}` : null,
-      }));
-    }
-
-    // จัดเรียง
+    const items = (data || []).map(mapRow);
+    const dir = sortOrder === 'asc' ? 1 : -1;
     items.sort((a, b) => {
-      if (sortBy === 'name') {
-        return sortOrder === 'asc' ? a.name.localeCompare(b.name, 'th') : b.name.localeCompare(a.name, 'th');
+      if (sortBy === 'currentStock') return (a.currentStock - b.currentStock) * dir;
+      if (sortBy === 'category') {
+        const byCategory = (a.category || '').localeCompare(b.category || '', 'th');
+        if (byCategory !== 0) return byCategory * dir;
       }
-      if (sortBy === 'currentStock') {
-        return sortOrder === 'asc' ? a.currentStock - b.currentStock : b.currentStock - a.currentStock;
-      }
-      return 0;
+      return a.name.localeCompare(b.name, 'th') * dir;
     });
-
-    // กรองสถานะสต็อก
-    if (status === 'out') {
-      items = items.filter((item) => item.currentStock <= 0);
-    } else if (status === 'low') {
-      items = items.filter((item) => item.currentStock > 0 && item.currentStock <= item.minStockLevel);
-    } else if (status === 'in_stock') {
-      items = items.filter((item) => item.currentStock > item.minStockLevel);
-    }
 
     return { success: true, data: items, provider: 'supabase' };
   } catch (error: any) {
-    console.error('Failed to fetch ingredients from Supabase:', error);
+    console.error('Failed to fetch inventory from Supabase:', error);
     return { success: false, data: [], provider: 'supabase', error: error.message || 'ไม่สามารถดึงข้อมูลได้' };
   }
 }
 
 /**
- * ดึงข้อมูลสรุปภาพรวมสต็อก
+ * สรุปภาพรวมสต็อก (เฉพาะรายการที่ใช้งานอยู่)
  */
-export async function getInventoryStats(tab: InventoryTab = 'supplies'): Promise<InventoryStats> {
+export async function getInventoryStats(): Promise<InventoryStats> {
+  const ctx = await requireClient();
+  if ('failure' in ctx) return EMPTY_STATS;
+
   try {
-    if (!isSupabaseConfigured) {
-      return { totalItems: 0, lowStockCount: 0, outOfStockCount: 0, categoriesCount: 0, totalEstimatedValue: 0 };
-    }
-
-    const tableName = tab === 'supplies' ? 'supplies' : 'stock';
-    const { data, error } = await supabase.from(tableName).select('*');
-    if (error || !data) return { totalItems: 0, lowStockCount: 0, outOfStockCount: 0, categoriesCount: 0, totalEstimatedValue: 0 };
-
-    const totalItems = data.length;
-    let lowStockCount = 0;
-    let outOfStockCount = 0;
-    let totalEstimatedValue = 0;
-    const uniqueCategories = new Set<string>();
-
-    for (const item of data) {
-      if (item.category) uniqueCategories.add(item.category);
-
-      const qty = Number(item.stock_quantity) || 0;
-      const minLevel = tab === 'supplies' ? 5 : 10;
-      const cost = tab === 'supplies' ? (Number(item.cost_per_unit) || Number(item.purchase_price) || 0) : (Number(item.avg_cost) || 0);
-
-      if (qty <= 0) {
-        outOfStockCount++;
-      } else if (qty <= minLevel) {
-        lowStockCount++;
-      }
-
-      if (cost > 0 && qty > 0) {
-        // จำกัดไม่ให้จำนวนหลอกเช่น 999999 ดึงมูลค่าเวอร์
-        const effectiveQty = qty > 10000 ? 100 : qty;
-        totalEstimatedValue += cost * effectiveQty;
-      }
-    }
+    const { data, error } = await ctx.client
+      .from('v_inventory')
+      .select('status, category, stock_value')
+      .eq('is_active', true);
+    if (error || !data) return EMPTY_STATS;
 
     return {
-      totalItems,
-      lowStockCount,
-      outOfStockCount,
-      categoriesCount: uniqueCategories.size,
-      totalEstimatedValue,
+      totalItems: data.length,
+      lowStockCount: data.filter((row) => row.status === 'low').length,
+      outOfStockCount: data.filter((row) => row.status === 'out').length,
+      categoriesCount: new Set(data.map((row) => row.category).filter(Boolean)).size,
+      totalEstimatedValue: data.reduce((sum, row) => sum + Math.max(0, toNumber(row.stock_value)), 0),
     };
   } catch (error) {
     console.error('Failed to get inventory stats:', error);
-    return { totalItems: 0, lowStockCount: 0, outOfStockCount: 0, categoriesCount: 0, totalEstimatedValue: 0 };
+    return EMPTY_STATS;
   }
 }
 
-type WriteOperation = 'insert' | 'update' | 'delete';
-
-type WriteResult = { success: boolean; error?: string; code?: 'UNAUTHENTICATED' | 'RLS_DENIED' };
-
-const WRITE_OPERATION_LABEL: Record<WriteOperation, string> = {
-  insert: 'เพิ่ม',
-  update: 'แก้ไข',
-  delete: 'ลบ',
-};
-
-const UNAUTHENTICATED_RESULT: WriteResult = {
-  success: false,
-  code: 'UNAUTHENTICATED',
-  error: 'กรุณาเข้าสู่ระบบก่อนแก้ไขข้อมูล',
-};
-
 /**
- * แปลง error จาก Supabase ให้อ่านเข้าใจได้ และระบุตาราง/คำสั่งที่ต้องเพิ่ม RLS policy
+ * ตัวเลือกในฟอร์ม: หมวด, หน่วย, ผู้ขาย
  */
-function toWriteError(error: any, table: string, operation: WriteOperation, fallback: string): WriteResult {
-  const message: string = error?.message || '';
-  if (error?.code === '42501' || /row-level security|permission denied/i.test(message)) {
-    return {
-      success: false,
-      code: 'RLS_DENIED',
-      error: `ไม่มีสิทธิ์${WRITE_OPERATION_LABEL[operation]}ข้อมูลในตาราง "${table}" (ถูกปฏิเสธโดย Row Level Security) — ต้องเพิ่ม policy ${operation.toUpperCase()} สำหรับ role authenticated บนตาราง ${table} ใน Supabase`,
-    };
-  }
-  return { success: false, error: message || fallback };
-}
+export async function getInventoryLookups(): Promise<InventoryLookups> {
+  const ctx = await requireClient();
+  if ('failure' in ctx) return EMPTY_LOOKUPS;
 
-/**
- * UPDATE/DELETE ที่ RLS ไม่อนุญาตจะไม่ error แต่ไม่มีแถวใดถูกเปลี่ยน จึงต้องตรวจจำนวนแถวด้วย
- */
-function noRowsAffectedError(table: string, operation: WriteOperation): WriteResult {
+  const [categories, units, suppliers] = await Promise.all([
+    ctx.client.from('item_categories').select('name').order('sort_order').order('name'),
+    ctx.client.from('units').select('name_th, kind').order('kind').order('name_th'),
+    ctx.client.from('suppliers').select('name').eq('is_active', true).order('name'),
+  ]);
+
   return {
-    success: false,
-    code: 'RLS_DENIED',
-    error: `ไม่มีรายการใดถูก${WRITE_OPERATION_LABEL[operation]}ในตาราง "${table}" — รายการอาจถูกลบไปแล้ว หรือ Row Level Security ไม่อนุญาต (ต้องมี policy SELECT และ ${operation.toUpperCase()} สำหรับ role authenticated บนตาราง ${table})`,
+    categories: (categories.data || []).map((row) => row.name),
+    units: (units.data || []).map((row) => row.name_th),
+    suppliers: (suppliers.data || []).map((row) => row.name),
   };
 }
 
-/**
- * สร้างรายการใหม่ลงใน Supabase
- */
-export async function createIngredient(
-  data: IngredientInput
-): Promise<WriteResult & { data?: Ingredient }> {
-  const targetTable = data.sourceTable || 'supplies';
-  try {
-    if (!data.name || data.name.trim() === '') {
-      return { success: false, error: 'กรุณากรอกชื่อวัตถุดิบ/สินค้า' };
-    }
+// ---------------------------------------------------------------------------
+// ตัวช่วยเขียนข้อมูล
+// ---------------------------------------------------------------------------
 
-    const auth = await getAuthenticatedClient();
-    if (!auth) return UNAUTHENTICATED_RESULT;
+/** หา id ของหมวด/ผู้ขายจากชื่อ ถ้ายังไม่มีให้สร้างใหม่ (ชื่อว่าง = null) */
+async function resolveNamedId(client: Client, table: 'item_categories' | 'suppliers', name?: string | null) {
+  const trimmed = name?.trim();
+  if (!trimmed) return null;
 
-    if (targetTable === 'supplies') {
-      const payload = {
-        item_name: data.name.trim(),
-        category: data.category?.trim() || 'Supply',
-        unit: data.unit || 'ชิ้น',
-        purchase_price: Number(data.costPerUnit) || 0,
-        cost_per_unit: Number(data.costPerUnit) || 0,
-        stock_quantity: Number(data.currentStock) || 0,
-        package_quantity: Number(data.packageQuantity) || 1,
-      };
+  const { data: existing, error: findErr } = await client.from(table).select('id').eq('name', trimmed).maybeSingle();
+  if (findErr) throw findErr;
+  if (existing) return existing.id as number;
 
-      const { error } = await auth.client.from('supplies').insert([payload]);
-      if (error) return toWriteError(error, 'supplies', 'insert', 'เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Supabase');
-      revalidatePath('/');
-      return { success: true };
-    } else {
-      const payload = {
-        item_name: data.name.trim(),
-        category: data.category?.trim() || 'Coffee',
-        unit: data.unit || 'Cup',
-        price: Number(data.price) || 0,
-        avg_cost: Number(data.costPerUnit) || 0,
-        stock_quantity: Number(data.currentStock) || 0,
-        barcode: data.barcode?.trim() || '-',
-        sale_type: 'ราคาต่อหน่วย',
-      };
-
-      const { error } = await auth.client.from('stock').insert([payload]);
-      if (error) return toWriteError(error, 'stock', 'insert', 'เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Supabase');
-      revalidatePath('/');
-      return { success: true };
-    }
-  } catch (error: any) {
-    console.error('Failed to create ingredient:', error);
-    return toWriteError(error, targetTable, 'insert', 'เกิดข้อผิดพลาดในการบันทึกข้อมูลลง Supabase');
-  }
+  const { data: created, error: insertErr } = await client.from(table).insert({ name: trimmed }).select('id').single();
+  if (insertErr) throw insertErr;
+  return created.id as number;
 }
 
+/** แปลงชื่อหน่วยภาษาไทย → units.code */
+async function resolveUnitCode(client: Client, unitName: string) {
+  const { data, error } = await client.from('units').select('code').eq('name_th', unitName.trim()).maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error(`ไม่รู้จักหน่วย "${unitName}" — เพิ่มหน่วยในตาราง units ก่อน`);
+  return data.code as string;
+}
+
+/** บันทึกรับเข้า/จ่ายออก 1 รายการ จ่ายออกเกินยอดที่มี → จ่ายเท่าที่มี (ยอดไม่ติดลบ) */
+async function insertMovement(client: Client, itemId: number, movement: StockMovementInput) {
+  const amount = Math.abs(Number(movement.quantity) || 0);
+  if (amount === 0) return { quantity: 0 };
+
+  let quantity = movement.type === 'purchase' ? amount : -amount;
+  if (movement.type === 'usage') {
+    const { data: item, error } = await client.from('items').select('current_stock').eq('id', itemId).single();
+    if (error) throw error;
+    quantity = -Math.min(amount, Math.max(0, toNumber(item.current_stock)));
+    if (quantity === 0) return { quantity: 0 };
+  }
+
+  const { error } = await client.from('stock_movements').insert({
+    item_id: itemId,
+    movement_type: movement.type,
+    quantity,
+    note: movement.note || null,
+  });
+  if (error) throw error;
+  return { quantity };
+}
+
+async function itemPayload(client: Client, data: Partial<IngredientInput>) {
+  const payload: Record<string, unknown> = {};
+  if (data.name !== undefined) payload.name = data.name.trim();
+  if (data.unit !== undefined) payload.unit_code = await resolveUnitCode(client, data.unit);
+  if (data.category !== undefined) payload.category_id = await resolveNamedId(client, 'item_categories', data.category);
+  if (data.supplier !== undefined) payload.default_supplier_id = await resolveNamedId(client, 'suppliers', data.supplier);
+  if (data.costPerUnit !== undefined) payload.cost_per_unit = Math.max(0, Number(data.costPerUnit) || 0);
+  if (data.minStockLevel !== undefined) payload.reorder_point = Math.max(0, Number(data.minStockLevel) || 0);
+  if (data.tareWeight !== undefined) payload.tare_weight = Math.max(0, Number(data.tareWeight) || 0);
+  if (data.barcode !== undefined) payload.barcode = data.barcode.trim() || null;
+  if (data.notes !== undefined) payload.notes = data.notes.trim() || null;
+  if (data.packageQuantity !== undefined) {
+    const size = Number(data.packageQuantity);
+    payload.purchase_pack_size = size > 0 ? size : null;
+  }
+  return payload;
+}
+
+// ---------------------------------------------------------------------------
+// เพิ่ม / แก้ / ลบ
+// ---------------------------------------------------------------------------
+
 /**
- * อัปเดตข้อมูลใน Supabase
+ * เพิ่มสินค้าใหม่ — ยอดเริ่มต้นถูกบันทึกเป็น movement "opening" อัตโนมัติ (trigger)
  */
-export async function updateIngredient(
-  id: string,
-  data: Partial<IngredientInput>,
-  sourceTable: 'supplies' | 'stock' = 'supplies'
-): Promise<WriteResult> {
+export async function createIngredient(data: IngredientInput): Promise<WriteResult & { data?: Ingredient }> {
+  if (!data.name || data.name.trim() === '') {
+    return { success: false, error: 'กรุณากรอกชื่อวัตถุดิบ/สินค้า' };
+  }
+
+  const ctx = await requireClient();
+  if ('failure' in ctx) return ctx.failure;
+
   try {
-    const auth = await getAuthenticatedClient();
-    if (!auth) return UNAUTHENTICATED_RESULT;
+    const payload = await itemPayload(ctx.client, data);
+    payload.current_stock = Math.max(0, Number(data.currentStock) || 0);
 
-    const numId = isNaN(Number(id)) ? id : Number(id);
-    const updatePayload: any = {};
-
-    if (sourceTable === 'supplies') {
-      if (data.name !== undefined) updatePayload.item_name = data.name.trim();
-      if (data.category !== undefined) updatePayload.category = data.category.trim();
-      if (data.unit !== undefined) updatePayload.unit = data.unit.trim();
-      if (data.costPerUnit !== undefined) {
-        updatePayload.cost_per_unit = Number(data.costPerUnit);
-        updatePayload.purchase_price = Number(data.costPerUnit);
-      }
-      if (data.currentStock !== undefined) updatePayload.stock_quantity = Number(data.currentStock);
-      if (data.packageQuantity !== undefined) updatePayload.package_quantity = Number(data.packageQuantity);
-    } else {
-      if (data.name !== undefined) updatePayload.item_name = data.name.trim();
-      if (data.category !== undefined) updatePayload.category = data.category.trim();
-      if (data.unit !== undefined) updatePayload.unit = data.unit.trim();
-      if (data.price !== undefined) updatePayload.price = Number(data.price);
-      if (data.costPerUnit !== undefined) updatePayload.avg_cost = Number(data.costPerUnit);
-      if (data.currentStock !== undefined) updatePayload.stock_quantity = Number(data.currentStock);
-      if (data.barcode !== undefined) updatePayload.barcode = data.barcode.trim();
-    }
-
-    const { error, count } = await auth.client
-      .from(sourceTable)
-      .update(updatePayload, { count: 'exact' })
-      .eq('id', numId);
-    if (error) return toWriteError(error, sourceTable, 'update', 'เกิดข้อผิดพลาดในการแก้ไขข้อมูล');
-    if (count === 0) return noRowsAffectedError(sourceTable, 'update');
+    const { error } = await ctx.client.from('items').insert(payload);
+    if (error) return toWriteError(error, 'items', 'insert', 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
 
     revalidatePath('/');
     return { success: true };
   } catch (error: any) {
-    console.error('Failed to update ingredient in Supabase:', error);
-    return toWriteError(error, sourceTable, 'update', 'เกิดข้อผิดพลาดในการแก้ไขข้อมูล');
+    console.error('Failed to create item:', error);
+    return toWriteError(error, 'items', 'insert', 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
   }
 }
 
 /**
- * ลบรายการออกจาก Supabase
+ * แก้ไขข้อมูลสินค้า
+ * - stockMovement → บันทึกรับเข้า/จ่ายออก
+ * - currentStock (ไม่มี stockMovement) → ตั้งยอดใหม่ ระบบบันทึกส่วนต่างเป็น "นับสต็อก"
  */
-export async function deleteIngredient(
-  id: string,
-  sourceTable: 'supplies' | 'stock' = 'supplies'
-): Promise<WriteResult> {
-  try {
-    const auth = await getAuthenticatedClient();
-    if (!auth) return UNAUTHENTICATED_RESULT;
+export async function updateIngredient(id: string, data: Partial<IngredientInput>): Promise<WriteResult> {
+  const ctx = await requireClient();
+  if ('failure' in ctx) return ctx.failure;
 
-    const numId = isNaN(Number(id)) ? id : Number(id);
-    const { error, count } = await auth.client
-      .from(sourceTable)
-      .delete({ count: 'exact' })
-      .eq('id', numId);
-    if (error) return toWriteError(error, sourceTable, 'delete', 'เกิดข้อผิดพลาดในการลบข้อมูล');
-    if (count === 0) return noRowsAffectedError(sourceTable, 'delete');
+  try {
+    const itemId = toId(id);
+    const payload = await itemPayload(ctx.client, data);
+    if (!data.stockMovement && data.currentStock !== undefined) {
+      payload.current_stock = Math.max(0, Number(data.currentStock) || 0);
+    }
+
+    if (Object.keys(payload).length > 0) {
+      const { error, count } = await ctx.client.from('items').update(payload, { count: 'exact' }).eq('id', itemId);
+      if (error) return toWriteError(error, 'items', 'update', 'เกิดข้อผิดพลาดในการแก้ไขข้อมูล');
+      if (count === 0) return noRowsAffectedError('items', 'update');
+    }
+
+    if (data.stockMovement) await insertMovement(ctx.client, itemId, data.stockMovement);
 
     revalidatePath('/');
     return { success: true };
   } catch (error: any) {
-    console.error('Failed to delete ingredient from Supabase:', error);
-    return toWriteError(error, sourceTable, 'delete', 'เกิดข้อผิดพลาดในการลบข้อมูล');
+    console.error('Failed to update item:', error);
+    return toWriteError(error, 'items', 'update', 'เกิดข้อผิดพลาดในการแก้ไขข้อมูล');
   }
 }
 
 /**
- * ปรับยอดสต็อกอย่างรวดเร็ว (Quick Adjust Stock)
+ * นำรายการออกจากคลัง — ตั้ง is_active = false (ประวัติสต็อกและ audit log ยังอยู่ครบ)
+ */
+export async function deleteIngredient(id: string): Promise<WriteResult> {
+  const ctx = await requireClient();
+  if ('failure' in ctx) return ctx.failure;
+
+  try {
+    const { error, count } = await ctx.client
+      .from('items')
+      .update({ is_active: false }, { count: 'exact' })
+      .eq('id', toId(id));
+    if (error) return toWriteError(error, 'items', 'update', 'เกิดข้อผิดพลาดในการลบข้อมูล');
+    if (count === 0) return noRowsAffectedError('items', 'update');
+
+    revalidatePath('/');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Failed to deactivate item:', error);
+    return toWriteError(error, 'items', 'update', 'เกิดข้อผิดพลาดในการลบข้อมูล');
+  }
+}
+
+/**
+ * ปรับยอดสต็อกอย่างรวดเร็ว: add = รับเข้า, subtract = จ่ายออก, set = ตั้งยอด (นับสต็อก)
  */
 export async function quickAdjustStock(
   id: string,
   amount: number,
-  mode: 'set' | 'add' | 'subtract',
-  sourceTable: 'supplies' | 'stock' = 'supplies'
+  mode: 'set' | 'add' | 'subtract'
 ): Promise<WriteResult & { newStock?: number }> {
+  const ctx = await requireClient();
+  if ('failure' in ctx) return ctx.failure;
+
   try {
-    const auth = await getAuthenticatedClient();
-    if (!auth) return UNAUTHENTICATED_RESULT;
-
-    const numId = isNaN(Number(id)) ? id : Number(id);
-    const { data: item, error: fetchErr } = await auth.client
-      .from(sourceTable)
-      .select('stock_quantity')
-      .eq('id', numId)
-      .single();
-
-    if (fetchErr || !item) {
-      return {
-        success: false,
-        error: `ไม่พบรายการในตาราง "${sourceTable}" (หรือ role authenticated ยังไม่มี policy SELECT บนตารางนี้)`,
-      };
+    const itemId = toId(id);
+    if (mode === 'set') {
+      const { error } = await ctx.client.rpc('record_stock_count', {
+        p_item_id: itemId,
+        p_counted: Math.max(0, Number(amount) || 0),
+      });
+      if (error) return toWriteError(error, 'stock_movements', 'insert', 'เกิดข้อผิดพลาดในการปรับยอดสต็อก');
+    } else {
+      await insertMovement(ctx.client, itemId, { type: mode === 'add' ? 'purchase' : 'usage', quantity: amount });
     }
-    const currentStock = Number(item.stock_quantity) || 0;
 
-    let newStock = currentStock;
-    if (mode === 'set') newStock = Math.max(0, amount);
-    else if (mode === 'add') newStock = currentStock + amount;
-    else if (mode === 'subtract') newStock = Math.max(0, currentStock - amount);
-
-    const { error: updateErr, count } = await auth.client
-      .from(sourceTable)
-      .update({ stock_quantity: newStock }, { count: 'exact' })
-      .eq('id', numId);
-
-    if (updateErr) return toWriteError(updateErr, sourceTable, 'update', 'เกิดข้อผิดพลาดในการปรับยอดสต็อก');
-    if (count === 0) return noRowsAffectedError(sourceTable, 'update');
+    const { data: item, error: fetchErr } = await ctx.client
+      .from('items')
+      .select('current_stock')
+      .eq('id', itemId)
+      .single();
+    if (fetchErr) return toWriteError(fetchErr, 'items', 'update', 'ปรับยอดแล้ว แต่อ่านยอดใหม่ไม่ได้');
 
     revalidatePath('/');
-    return { success: true, newStock };
+    return { success: true, newStock: toNumber(item.current_stock) };
   } catch (error: any) {
     console.error('Failed to adjust stock:', error);
-    return toWriteError(error, sourceTable, 'update', 'เกิดข้อผิดพลาดในการปรับยอดสต็อก');
+    return toWriteError(error, 'stock_movements', 'insert', 'เกิดข้อผิดพลาดในการปรับยอดสต็อก');
   }
 }
 
 /**
- * บันทึกยอดนับสต็อกหลายรายการพร้อมกัน (หน้า /count) — ตรวจสิทธิ์ครั้งเดียว แล้วอัปเดตทีละแถว
+ * บันทึกยอดนับสต็อกหลายรายการ (หน้า /count) — แต่ละรายการบันทึกส่วนต่างเป็น movement "count"
  * คืนรายการ id ที่บันทึกไม่สำเร็จ เพื่อให้หน้าเว็บเก็บค่าที่ยังไม่ได้บันทึกไว้ให้ลองใหม่
  */
 export async function saveStockCounts(
-  counts: { id: string; currentStock: number }[],
-  sourceTable: 'supplies' | 'stock'
+  counts: { id: string; currentStock: number }[]
 ): Promise<WriteResult & { savedIds?: string[]; failedIds?: string[] }> {
-  try {
-    const auth = await getAuthenticatedClient();
-    if (!auth) return UNAUTHENTICATED_RESULT;
+  const ctx = await requireClient();
+  if ('failure' in ctx) return ctx.failure;
 
+  try {
     const results = await Promise.all(
       counts.map(async ({ id, currentStock }) => {
-        const numId = isNaN(Number(id)) ? id : Number(id);
-        const { error, count } = await auth.client
-          .from(sourceTable)
-          .update({ stock_quantity: Math.max(0, Number(currentStock) || 0) }, { count: 'exact' })
-          .eq('id', numId);
-        if (error) return { id, failure: toWriteError(error, sourceTable, 'update', 'เกิดข้อผิดพลาดในการบันทึกยอดนับ') };
-        if (count === 0) return { id, failure: noRowsAffectedError(sourceTable, 'update') };
+        const { error } = await ctx.client.rpc('record_stock_count', {
+          p_item_id: toId(id),
+          p_counted: Math.max(0, Number(currentStock) || 0),
+          p_note: 'นับสต็อก (หน้านับสต็อก)',
+        });
+        if (error) {
+          return { id, failure: toWriteError(error, 'stock_movements', 'insert', 'เกิดข้อผิดพลาดในการบันทึกยอดนับ') };
+        }
         return { id, failure: null };
       })
     );
@@ -443,6 +449,6 @@ export async function saveStockCounts(
     return { success: true, savedIds, failedIds };
   } catch (error: any) {
     console.error('Failed to save stock counts:', error);
-    return toWriteError(error, sourceTable, 'update', 'เกิดข้อผิดพลาดในการบันทึกยอดนับ');
+    return toWriteError(error, 'stock_movements', 'insert', 'เกิดข้อผิดพลาดในการบันทึกยอดนับ');
   }
 }

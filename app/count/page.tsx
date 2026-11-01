@@ -6,13 +6,8 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Search, X, Info, Save, Loader2, CheckCircle2, AlertCircle, LogIn } from 'lucide-react';
 import { IngredientModal } from '@/components/dashboard/IngredientModal';
 import { useAuthSession } from '@/components/auth/useAuthSession';
-import { getIngredients, updateIngredient, saveStockCounts } from '@/app/actions/ingredients';
-import { Ingredient, IngredientInput, InventoryTab } from '@/types/ingredient';
-
-const TABS: { value: InventoryTab; label: string }[] = [
-  { value: 'supplies', label: 'พัสดุ & บรรจุภัณฑ์' },
-  { value: 'stock', label: 'สินค้าหน้าร้าน' },
-];
+import { getIngredients, getInventoryLookups, updateIngredient, saveStockCounts } from '@/app/actions/ingredients';
+import { Ingredient, IngredientInput, InventoryLookups, EMPTY_LOOKUPS } from '@/types/ingredient';
 
 /**
  * หน้านับสต็อกสำหรับมือถือ — หนึ่งรายการต่อหนึ่งบรรทัด กรอกยอดที่นับได้แล้วกดบันทึกทีเดียว
@@ -22,7 +17,8 @@ export default function StockCountPage() {
   const router = useRouter();
   const { status: authStatus } = useAuthSession();
 
-  const [activeTab, setActiveTab] = useState<InventoryTab>('supplies');
+  const [category, setCategory] = useState<string>('all');
+  const [lookups, setLookups] = useState<InventoryLookups>(EMPTY_LOOKUPS);
   const [items, setItems] = useState<Ingredient[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string>('');
@@ -49,19 +45,23 @@ export default function StockCountPage() {
   }, []);
 
   const loadItems = useCallback(
-    async (tab: InventoryTab) => applyLoadResult(await getIngredients({ tab })),
+    async () => applyLoadResult(await getIngredients({ sortBy: 'category' })),
     [applyLoadResult]
   );
 
+  // โหลดใหม่เมื่อสถานะล็อกอินเปลี่ยน (ข้อมูลสต็อกอ่านได้เฉพาะผู้ที่ล็อกอิน)
   useEffect(() => {
+    if (authStatus === 'loading') return;
     let ignore = false;
-    getIngredients({ tab: activeTab }).then((res) => {
-      if (!ignore) applyLoadResult(res);
+    Promise.all([getIngredients({ sortBy: 'category' }), getInventoryLookups()]).then(([res, lookupRes]) => {
+      if (ignore) return;
+      applyLoadResult(res);
+      setLookups(lookupRes);
     });
     return () => {
       ignore = true;
     };
-  }, [activeTab, applyLoadResult]);
+  }, [authStatus, applyLoadResult]);
 
   const changedEntries = items
     .filter((item) => counts[item.id] !== undefined && counts[item.id] !== '')
@@ -84,17 +84,14 @@ export default function StockCountPage() {
 
   const goToLogin = () => router.push('/login?next=%2Fcount');
 
-  const handleTabChange = (tab: InventoryTab) => {
-    if (tab === activeTab) return;
-    if (changedCount > 0 && !window.confirm(`มียอดที่ยังไม่บันทึก ${changedCount} รายการ ต้องการทิ้งแล้วเปลี่ยนแท็บหรือไม่?`)) return;
-    setCounts({});
-    setSearch('');
-    setLoading(true);
-    setActiveTab(tab);
-  };
+  const categories = Array.from(new Set(items.map((item) => item.category).filter(Boolean))) as string[];
 
   const query = search.trim().toLowerCase();
-  const visibleItems = query ? items.filter((item) => item.name.toLowerCase().includes(query)) : items;
+  const visibleItems = items.filter(
+    (item) =>
+      (category === 'all' || item.category === category) &&
+      (!query || item.name.toLowerCase().includes(query) || (item.sku ?? '').toLowerCase() === query)
+  );
 
   // กด "ถัดไป" บนคีย์บอร์ด → ไปช่องของรายการถัดไป
   const focusNext = (index: number) => {
@@ -113,8 +110,7 @@ export default function StockCountPage() {
 
     setSaving(true);
     const res = await saveStockCounts(
-      changedEntries.map(({ item, value }) => ({ id: item.id, currentStock: value })),
-      activeTab
+      changedEntries.map(({ item, value }) => ({ id: item.id, currentStock: value }))
     );
     setSaving(false);
 
@@ -141,7 +137,7 @@ export default function StockCountPage() {
   const handleSaveDetail = async (formData: IngredientInput): Promise<boolean> => {
     if (!detailItem) return false;
     setDetailSaving(true);
-    const res = await updateIngredient(detailItem.id, formData, detailItem.sourceTable);
+    const res = await updateIngredient(detailItem.id, formData);
     setDetailSaving(false);
 
     if (!res.success) {
@@ -157,7 +153,7 @@ export default function StockCountPage() {
       return nextCounts;
     });
     showMessage(`อัปเดต "${formData.name}" แล้ว`);
-    loadItems(activeTab);
+    loadItems();
     return true;
   };
 
@@ -191,16 +187,17 @@ export default function StockCountPage() {
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100/90 rounded-xl">
-            {TABS.map((tab) => (
+          {/* กรองตามหมวด (ยอดที่กรอกไว้ไม่หาย) */}
+          <div className="flex gap-1.5 overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0 pb-0.5">
+            {['all', ...categories].map((cat) => (
               <button
-                key={tab.value}
-                onClick={() => handleTabChange(tab.value)}
-                className={`py-2 rounded-lg text-xs font-semibold touch-press transition-colors ${
-                  activeTab === tab.value ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
+                key={cat}
+                onClick={() => setCategory(cat)}
+                className={`shrink-0 h-8 px-3 rounded-full text-xs font-semibold touch-press transition-colors ${
+                  category === cat ? 'bg-[#2D2B2A] text-white' : 'bg-slate-100 text-slate-600'
                 }`}
               >
-                {tab.label}
+                {cat === 'all' ? 'ทั้งหมด' : cat}
               </button>
             ))}
           </div>
@@ -347,7 +344,7 @@ export default function StockCountPage() {
         onSubmit={handleSaveDetail}
         initialData={detailItem}
         loading={detailSaving}
-        activeTab={activeTab}
+        lookups={lookups}
       />
     </div>
   );

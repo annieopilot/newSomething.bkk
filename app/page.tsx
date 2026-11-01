@@ -10,7 +10,7 @@ import { DeleteConfirmDialog } from '@/components/dashboard/DeleteConfirmDialog'
 import { TareScaleModal } from '@/components/dashboard/TareScaleModal';
 import { SupabaseConfigModal } from '@/components/dashboard/SupabaseConfigModal';
 import { useAuthSession } from '@/components/auth/useAuthSession';
-import { Ingredient, IngredientInput, InventoryStats, InventoryTab } from '@/types/ingredient';
+import { Ingredient, IngredientInput, InventoryLookups, InventoryStats, EMPTY_LOOKUPS } from '@/types/ingredient';
 import { 
   getIngredients, 
   getInventoryStats, 
@@ -18,7 +18,8 @@ import {
   updateIngredient, 
   deleteIngredient, 
   quickAdjustStock,
-  getDatabaseConnectionStatus
+  getDatabaseConnectionStatus,
+  getInventoryLookups,
 } from '@/app/actions/ingredients';
 import Link from 'next/link';
 import { CheckCircle2, AlertCircle, ClipboardList } from 'lucide-react';
@@ -30,8 +31,9 @@ export default function StockDashboardPage() {
   const isAuthenticated = authStatus === 'authenticated';
   const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
 
-  const [activeTab, setActiveTab] = useState<InventoryTab>('supplies');
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [lookups, setLookups] = useState<InventoryLookups>(EMPTY_LOOKUPS);
+  const [loadError, setLoadError] = useState<string>('');
   const [stats, setStats] = useState<InventoryStats>({
     totalItems: 0,
     lowStockCount: 0,
@@ -120,21 +122,32 @@ export default function StockDashboardPage() {
     else setIsRefreshing(true);
 
     try {
-      const [ingredientsRes, statsRes, dbStatus] = await Promise.all([
+      const [ingredientsRes, statsRes, dbStatus, lookupsRes] = await Promise.all([
         getIngredients({
-          tab: activeTab,
           search: searchQuery,
           category: selectedCategory,
           status: statusFilter,
+          sortBy: 'category',
         }),
-        getInventoryStats(activeTab),
+        getInventoryStats(),
         getDatabaseConnectionStatus(),
+        getInventoryLookups(),
       ]);
 
       if (ingredientsRes.success) {
         setIngredients(ingredientsRes.data);
+        setLoadError('');
+      } else {
+        // ข้อมูลสต็อกอ่านได้เฉพาะผู้ที่ล็อกอิน (RLS)
+        setIngredients([]);
+        setLoadError(
+          ingredientsRes.code === 'UNAUTHENTICATED'
+            ? 'กรุณาเข้าสู่ระบบเพื่อดูข้อมูลสต็อก'
+            : ingredientsRes.error || 'ไม่สามารถดึงข้อมูลได้'
+        );
       }
       setStats(statsRes);
+      setLookups(lookupsRes);
       setIsSupabaseConnected(dbStatus.isConfigured);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -143,22 +156,24 @@ export default function StockDashboardPage() {
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, [activeTab, searchQuery, selectedCategory, statusFilter]);
+  }, [searchQuery, selectedCategory, statusFilter]);
 
+  // โหลดเมื่อฟิลเตอร์เปลี่ยน และเมื่อล็อกอิน/ออกจากระบบ (ข้อมูลอ่านได้เฉพาะผู้ที่ล็อกอิน)
   useEffect(() => {
+    if (authStatus === 'loading') return;
     loadData(true);
-  }, [loadData]);
+  }, [loadData, authStatus]);
 
   // Extract unique categories for filter pills
-  const availableCategories = Array.from(
-    new Set(ingredients.map((item) => item.category).filter(Boolean))
-  ) as string[];
+  const availableCategories = lookups.categories.length > 0
+    ? lookups.categories
+    : (Array.from(new Set(ingredients.map((item) => item.category).filter(Boolean))) as string[]);
 
   // Action: Add / Edit Save
   const handleSaveIngredient = async (formData: IngredientInput): Promise<boolean> => {
     try {
       if (selectedIngredient) {
-        const res = await updateIngredient(selectedIngredient.id, formData, selectedIngredient.sourceTable);
+        const res = await updateIngredient(selectedIngredient.id, formData);
         if (res.success) {
           showToast(`อัปเดต "${formData.name}" บน Supabase เรียบร้อยแล้ว`);
           loadData();
@@ -168,9 +183,9 @@ export default function StockDashboardPage() {
           return false;
         }
       } else {
-        const res = await createIngredient({ ...formData, sourceTable: activeTab });
+        const res = await createIngredient(formData);
         if (res.success) {
-          showToast(`เพิ่ม "${formData.name}" ลงในตาราง ${activeTab} สำเร็จ`);
+          showToast(`เพิ่ม "${formData.name}" เข้าคลังแล้ว`);
           loadData();
           return true;
         } else {
@@ -188,9 +203,9 @@ export default function StockDashboardPage() {
   const handleConfirmDelete = async () => {
     if (!ingredientToDelete) return;
     try {
-      const res = await deleteIngredient(ingredientToDelete.id, ingredientToDelete.sourceTable);
+      const res = await deleteIngredient(ingredientToDelete.id);
       if (res.success) {
-        showToast(`ลบ "${ingredientToDelete.name}" ออกจาก Supabase แล้ว`);
+        showToast(`นำ "${ingredientToDelete.name}" ออกจากคลังแล้ว`);
         setIsDeleteDialogOpen(false);
         setIngredientToDelete(null);
         loadData();
@@ -206,7 +221,7 @@ export default function StockDashboardPage() {
   const handleQuickAdjust = async (ingredient: Ingredient, amount: number, mode: 'add' | 'subtract') => {
     if (!requireAuth()) return;
     try {
-      const res = await quickAdjustStock(ingredient.id, amount, mode, ingredient.sourceTable);
+      const res = await quickAdjustStock(ingredient.id, amount, mode);
       if (res.success && res.newStock !== undefined) {
         showToast(`ปรับสต็อก "${ingredient.name}" เป็น ${res.newStock} ${ingredient.unit}`);
         loadData();
@@ -222,7 +237,7 @@ export default function StockDashboardPage() {
   const handleApplyTareStock = async (id: string, netStock: number): Promise<boolean> => {
     try {
       const item = ingredients.find((i) => i.id === id);
-      const res = await updateIngredient(id, { currentStock: netStock }, item?.sourceTable || activeTab);
+      const res = await updateIngredient(id, { currentStock: netStock });
       if (res.success) {
         showToast(`หักน้ำหนักภาชนะสำเร็จ! อัปเดตสต็อกสุทธิเป็น ${netStock} ${item?.unit || 'ชิ้น'}`);
         loadData();
@@ -262,11 +277,6 @@ export default function StockDashboardPage() {
 
       {/* Header */}
       <Header
-        activeTab={activeTab}
-        onTabChange={(tab) => {
-          setActiveTab(tab);
-          setSelectedCategory('all');
-        }}
         onAddNew={() => {
           if (!requireAuth()) return;
           setSelectedIngredient(null);
@@ -300,6 +310,23 @@ export default function StockDashboardPage() {
           <ClipboardList className="w-4 h-4" />
           <span>นับสต็อก</span>
         </Link>
+
+        {loadError && (
+          <div className="mb-3.5 sm:mb-5 p-3.5 rounded-xl bg-[#C62828]/10 border border-[#C62828]/20 text-[#C62828] text-sm flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              {loadError}
+            </span>
+            {authStatus === 'unauthenticated' && (
+              <button
+                onClick={goToLogin}
+                className="h-9 px-3 rounded-lg bg-[#C62828] text-white text-xs font-semibold shrink-0 touch-press"
+              >
+                เข้าสู่ระบบ
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Summary Cards */}
         <SummaryCards
@@ -342,7 +369,7 @@ export default function StockDashboardPage() {
       {/* CRUD Modal (Add / Edit) */}
       <IngredientModal
         isOpen={isModalOpen}
-        activeTab={activeTab}
+        lookups={lookups}
         onClose={() => {
           setIsModalOpen(false);
           setSelectedIngredient(null);

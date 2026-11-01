@@ -36,11 +36,11 @@ export function DeleteConfirmDialog({
           </div>
 
           <h3 className="text-base sm:text-lg font-bold text-slate-900">
-            ยืนยันการลบวัตถุดิบ?
+            นำรายการนี้ออกจากคลัง?
           </h3>
 
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            คุณกำลังจะลบรายการนี้ออกจากระบบอย่างถาวร
+            รายการจะไม่แสดงในคลังและไม่ถูกแจ้งเตือนอีก (ประวัติสต็อกยังเก็บไว้)
           </p>
 
           {/* Ingredient Details Card */}
@@ -85,7 +85,7 @@ export function DeleteConfirmDialog({
             className="flex-1 h-11 sm:h-12 px-4 rounded-xl bg-[#C62828] hover:bg-[#a82222] active:bg-[#8c1c1c] text-white font-semibold text-sm flex items-center justify-center space-x-2 touch-press transition-colors disabled:opacity-50 shadow-xs"
           >
             <Trash2 className="w-4 h-4" />
-            <span>{loading ? 'กำลังลบ...' : 'ลบรายการ'}</span>
+            <span>{loading ? 'กำลังนำออก...' : 'นำออกจากคลัง'}</span>
           </button>
         </div>
 
