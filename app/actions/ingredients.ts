@@ -6,7 +6,6 @@ import {
   Ingredient,
   IngredientInput,
   InventoryLookups,
-  InventoryStats,
   EMPTY_LOOKUPS,
   StockMovementInput,
 } from '@/types/ingredient';
@@ -37,14 +36,6 @@ const WRITE_OPERATION_LABEL: Record<WriteOperation, string> = {
   insert: 'เพิ่ม',
   update: 'แก้ไข',
   delete: 'ลบ',
-};
-
-const EMPTY_STATS: InventoryStats = {
-  totalItems: 0,
-  lowStockCount: 0,
-  outOfStockCount: 0,
-  categoriesCount: 0,
-  totalEstimatedValue: 0,
 };
 
 /**
@@ -113,114 +104,52 @@ function mapRow(row: any): Ingredient {
 }
 
 /**
- * ตรวจสอบว่าระบบกำลังเชื่อมต่อกับ Supabase หรือไม่
+ * โหลดข้อมูลหน้าคลังทั้งหมดในการเรียกครั้งเดียว: รายการที่ใช้งานอยู่ + ตัวเลือกในฟอร์ม
+ * (Next.js รัน server action ทีละตัว การรวมเป็นตัวเดียวจึงเร็วกว่าเรียกหลายตัว)
+ * การกรอง/ค้นหา/สรุปยอด ทำฝั่ง browser ด้วย lib/inventory.ts
  */
-export async function getDatabaseConnectionStatus(): Promise<{
-  provider: 'supabase' | 'local';
+export async function loadInventory(): Promise<{
+  success: boolean;
   isConfigured: boolean;
-  supabaseUrl?: string;
+  items: Ingredient[];
+  lookups: InventoryLookups;
+  error?: string;
+  code?: ErrorCode;
 }> {
-  return {
-    provider: isSupabaseConfigured ? 'supabase' : 'local',
-    isConfigured: isSupabaseConfigured,
-    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  };
-}
-
-/**
- * ดึงรายการสินค้าที่ใช้งานอยู่ (is_active) จาก v_inventory
- */
-export async function getIngredients(params?: {
-  search?: string;
-  category?: string;
-  status?: 'all' | 'low' | 'out' | 'in_stock';
-  sortBy?: 'name' | 'currentStock' | 'category';
-  sortOrder?: 'asc' | 'desc';
-}): Promise<{ success: boolean; data: Ingredient[]; provider: string; error?: string; code?: ErrorCode }> {
-  const { search, category, status = 'all', sortBy = 'name', sortOrder = 'asc' } = params || {};
-
+  const empty = { items: [], lookups: EMPTY_LOOKUPS, isConfigured: isSupabaseConfigured };
   const ctx = await requireClient();
-  if ('failure' in ctx) return { ...ctx.failure, success: false, data: [], provider: 'supabase' };
+  if ('failure' in ctx) return { ...empty, ...ctx.failure, success: false };
 
   try {
-    let query = ctx.client.from('v_inventory').select('*').eq('is_active', true);
+    // ยิงพร้อมกันทั้ง 4 คำสั่ง
+    const [items, categories, units, suppliers] = await Promise.all([
+      ctx.client.from('v_inventory').select('*').eq('is_active', true),
+      ctx.client.from('item_categories').select('name').order('sort_order').order('name'),
+      ctx.client.from('units').select('name_th, kind').order('kind').order('name_th'),
+      ctx.client.from('suppliers').select('name').eq('is_active', true).order('name'),
+    ]);
+    if (items.error) throw items.error;
 
-    if (category && category !== 'all') query = query.eq('category', category);
-    if (search && search.trim() !== '') {
-      // ค้นได้ทั้งชื่อ, SKU และบาร์โค้ด (ตัด , ( ) ออกเพราะเป็นตัวคั่นของ .or())
-      const term = search.trim().replace(/[,()]/g, ' ');
-      query = query.or(`name.ilike.%${term}%,sku.ilike.%${term}%,barcode.ilike.%${term}%`);
-    }
-    if (status === 'out') query = query.eq('status', 'out');
-    else if (status === 'low') query = query.eq('status', 'low');
-    else if (status === 'in_stock') query = query.eq('status', 'ok');
-
-    const { data, error } = await query;
-    if (error) throw error;
-
-    const items = (data || []).map(mapRow);
-    const dir = sortOrder === 'asc' ? 1 : -1;
-    items.sort((a, b) => {
-      if (sortBy === 'currentStock') return (a.currentStock - b.currentStock) * dir;
-      if (sortBy === 'category') {
-        const byCategory = (a.category || '').localeCompare(b.category || '', 'th');
-        if (byCategory !== 0) return byCategory * dir;
-      }
-      return a.name.localeCompare(b.name, 'th') * dir;
-    });
-
-    return { success: true, data: items, provider: 'supabase' };
-  } catch (error: any) {
-    console.error('Failed to fetch inventory from Supabase:', error);
-    return { success: false, data: [], provider: 'supabase', error: error.message || 'ไม่สามารถดึงข้อมูลได้' };
-  }
-}
-
-/**
- * สรุปภาพรวมสต็อก (เฉพาะรายการที่ใช้งานอยู่)
- */
-export async function getInventoryStats(): Promise<InventoryStats> {
-  const ctx = await requireClient();
-  if ('failure' in ctx) return EMPTY_STATS;
-
-  try {
-    const { data, error } = await ctx.client
-      .from('v_inventory')
-      .select('status, category, stock_value')
-      .eq('is_active', true);
-    if (error || !data) return EMPTY_STATS;
+    const data = (items.data || []).map(mapRow);
+    data.sort(
+      (a, b) =>
+        (a.category || '').localeCompare(b.category || '', 'th') || a.name.localeCompare(b.name, 'th')
+    );
 
     return {
-      totalItems: data.length,
-      lowStockCount: data.filter((row) => row.status === 'low').length,
-      outOfStockCount: data.filter((row) => row.status === 'out').length,
-      categoriesCount: new Set(data.map((row) => row.category).filter(Boolean)).size,
-      totalEstimatedValue: data.reduce((sum, row) => sum + Math.max(0, toNumber(row.stock_value)), 0),
+      success: true,
+      isConfigured: true,
+      items: data,
+      lookups: {
+        categories: (categories.data || []).map((row) => row.name),
+        units: (units.data || []).map((row) => row.name_th),
+        suppliers: (suppliers.data || []).map((row) => row.name),
+      },
     };
-  } catch (error) {
-    console.error('Failed to get inventory stats:', error);
-    return EMPTY_STATS;
+  } catch (error: any) {
+    console.error('Failed to load inventory from Supabase:', error);
+    return { ...empty, success: false, error: error.message || 'ไม่สามารถดึงข้อมูลได้' };
   }
-}
-
-/**
- * ตัวเลือกในฟอร์ม: หมวด, หน่วย, ผู้ขาย
- */
-export async function getInventoryLookups(): Promise<InventoryLookups> {
-  const ctx = await requireClient();
-  if ('failure' in ctx) return EMPTY_LOOKUPS;
-
-  const [categories, units, suppliers] = await Promise.all([
-    ctx.client.from('item_categories').select('name').order('sort_order').order('name'),
-    ctx.client.from('units').select('name_th, kind').order('kind').order('name_th'),
-    ctx.client.from('suppliers').select('name').eq('is_active', true).order('name'),
-  ]);
-
-  return {
-    categories: (categories.data || []).map((row) => row.name),
-    units: (units.data || []).map((row) => row.name_th),
-    suppliers: (suppliers.data || []).map((row) => row.name),
-  };
 }
 
 // ---------------------------------------------------------------------------

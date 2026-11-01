@@ -41,11 +41,14 @@ export async function createSupabaseServerClient() {
 }
 
 /**
- * ตรวจสอบผู้ใช้กับ Supabase Auth server (ไม่เชื่อข้อมูลจาก client)
+ * ตรวจสอบ session ของผู้ใช้
+ * getClaims() ตรวจลายเซ็น JWT ในเครื่องด้วย public key ของโปรเจกต์ (ไม่ต้องวิ่งไปถาม Auth server ทุกครั้ง
+ * เหมือน getUser()) — ถ้าโปรเจกต์ยังใช้ JWT secret แบบเดิม supabase-js จะถาม Auth server ให้เองโดยอัตโนมัติ
+ * สิทธิ์อ่าน/เขียนจริงยังถูกตรวจซ้ำที่ฐานข้อมูลด้วย RLS เสมอ
  */
 export async function getAuthenticatedClient() {
   const client = await createSupabaseServerClient();
-  const { data, error } = await client.auth.getUser();
-  if (error || !data.user) return null;
-  return { client, user: data.user };
+  const { data, error } = await client.auth.getClaims();
+  if (error || !data?.claims) return null;
+  return { client, claims: data.claims };
 }

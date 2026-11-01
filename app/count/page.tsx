@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Search, X, Info, Save, Loader2, CheckCircle2, AlertCircle, LogIn } from 'lucide-react';
 import { IngredientModal } from '@/components/dashboard/IngredientModal';
 import { useAuthSession } from '@/components/auth/useAuthSession';
-import { getIngredients, getInventoryLookups, updateIngredient, saveStockCounts } from '@/app/actions/ingredients';
+import { loadInventory, updateIngredient, saveStockCounts } from '@/app/actions/ingredients';
 import { Ingredient, IngredientInput, InventoryLookups, EMPTY_LOOKUPS } from '@/types/ingredient';
 
 /**
@@ -34,29 +34,27 @@ export default function StockCountPage() {
 
   const inputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
 
-  const applyLoadResult = useCallback((res: Awaited<ReturnType<typeof getIngredients>>) => {
+  const applyLoadResult = useCallback((res: Awaited<ReturnType<typeof loadInventory>>) => {
     if (res.success) {
-      setItems(res.data);
+      setItems(res.items);
+      setLookups(res.lookups);
       setLoadError('');
     } else {
-      setLoadError(res.error || 'ไม่สามารถดึงข้อมูลได้');
+      setLoadError(
+        res.code === 'UNAUTHENTICATED' ? 'กรุณาเข้าสู่ระบบเพื่อดูข้อมูลสต็อก' : res.error || 'ไม่สามารถดึงข้อมูลได้'
+      );
     }
     setLoading(false);
   }, []);
 
-  const loadItems = useCallback(
-    async () => applyLoadResult(await getIngredients({ sortBy: 'category' })),
-    [applyLoadResult]
-  );
+  const loadItems = useCallback(async () => applyLoadResult(await loadInventory()), [applyLoadResult]);
 
-  // โหลดใหม่เมื่อสถานะล็อกอินเปลี่ยน (ข้อมูลสต็อกอ่านได้เฉพาะผู้ที่ล็อกอิน)
+  // โหลดใหม่เมื่อสถานะล็อกอินเปลี่ยน (ข้อมูลสต็อกอ่านได้เฉพาะผู้ที่ล็อกอิน) — เรียก server ครั้งเดียว
   useEffect(() => {
     if (authStatus === 'loading') return;
     let ignore = false;
-    Promise.all([getIngredients({ sortBy: 'category' }), getInventoryLookups()]).then(([res, lookupRes]) => {
-      if (ignore) return;
-      applyLoadResult(res);
-      setLookups(lookupRes);
+    loadInventory().then((res) => {
+      if (!ignore) applyLoadResult(res);
     });
     return () => {
       ignore = true;

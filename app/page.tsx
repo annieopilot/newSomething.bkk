@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useTransition } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useTransition } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Header } from '@/components/dashboard/Header';
 import { SummaryCards } from '@/components/dashboard/SummaryCards';
@@ -10,16 +10,14 @@ import { DeleteConfirmDialog } from '@/components/dashboard/DeleteConfirmDialog'
 import { TareScaleModal } from '@/components/dashboard/TareScaleModal';
 import { SupabaseConfigModal } from '@/components/dashboard/SupabaseConfigModal';
 import { useAuthSession } from '@/components/auth/useAuthSession';
-import { Ingredient, IngredientInput, InventoryLookups, InventoryStats, EMPTY_LOOKUPS } from '@/types/ingredient';
-import { 
-  getIngredients, 
-  getInventoryStats, 
-  createIngredient, 
-  updateIngredient, 
-  deleteIngredient, 
+import { Ingredient, IngredientInput, InventoryLookups, EMPTY_LOOKUPS } from '@/types/ingredient';
+import { filterInventory, computeInventoryStats, StockStatusFilter } from '@/lib/inventory';
+import {
+  loadInventory,
+  createIngredient,
+  updateIngredient,
+  deleteIngredient,
   quickAdjustStock,
-  getDatabaseConnectionStatus,
-  getInventoryLookups,
 } from '@/app/actions/ingredients';
 import Link from 'next/link';
 import { CheckCircle2, AlertCircle, ClipboardList } from 'lucide-react';
@@ -34,13 +32,6 @@ export default function StockDashboardPage() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [lookups, setLookups] = useState<InventoryLookups>(EMPTY_LOOKUPS);
   const [loadError, setLoadError] = useState<string>('');
-  const [stats, setStats] = useState<InventoryStats>({
-    totalItems: 0,
-    lowStockCount: 0,
-    outOfStockCount: 0,
-    categoriesCount: 0,
-    totalEstimatedValue: 0,
-  });
 
   const [loading, setLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -50,7 +41,14 @@ export default function StockDashboardPage() {
   // Filters State
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'low' | 'out' | 'in_stock'>('all');
+  const [statusFilter, setStatusFilter] = useState<StockStatusFilter>('all');
+
+  // กรอง/สรุปในเครื่องจากข้อมูลที่โหลดมาแล้ว (ไม่ต้องเรียก server ใหม่ทุกครั้งที่พิมพ์ค้นหาหรือกดกรอง)
+  const visibleIngredients = useMemo(
+    () => filterInventory(ingredients, { search: searchQuery, category: selectedCategory, status: statusFilter }),
+    [ingredients, searchQuery, selectedCategory, statusFilter]
+  );
+  const stats = useMemo(() => computeInventoryStats(ingredients), [ingredients]);
 
   // Modals State
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -122,33 +120,22 @@ export default function StockDashboardPage() {
     else setIsRefreshing(true);
 
     try {
-      const [ingredientsRes, statsRes, dbStatus, lookupsRes] = await Promise.all([
-        getIngredients({
-          search: searchQuery,
-          category: selectedCategory,
-          status: statusFilter,
-          sortBy: 'category',
-        }),
-        getInventoryStats(),
-        getDatabaseConnectionStatus(),
-        getInventoryLookups(),
-      ]);
+      const res = await loadInventory();
 
-      if (ingredientsRes.success) {
-        setIngredients(ingredientsRes.data);
+      if (res.success) {
+        setIngredients(res.items);
+        setLookups(res.lookups);
         setLoadError('');
       } else {
         // ข้อมูลสต็อกอ่านได้เฉพาะผู้ที่ล็อกอิน (RLS)
         setIngredients([]);
         setLoadError(
-          ingredientsRes.code === 'UNAUTHENTICATED'
+          res.code === 'UNAUTHENTICATED'
             ? 'กรุณาเข้าสู่ระบบเพื่อดูข้อมูลสต็อก'
-            : ingredientsRes.error || 'ไม่สามารถดึงข้อมูลได้'
+            : res.error || 'ไม่สามารถดึงข้อมูลได้'
         );
       }
-      setStats(statsRes);
-      setLookups(lookupsRes);
-      setIsSupabaseConnected(dbStatus.isConfigured);
+      setIsSupabaseConnected(res.isConfigured);
     } catch (error) {
       console.error('Error loading data:', error);
       showToast('ไม่สามารถเชื่อมต่อฐานข้อมูลได้', 'error');
@@ -156,9 +143,9 @@ export default function StockDashboardPage() {
       setLoading(false);
       setIsRefreshing(false);
     }
-  }, [searchQuery, selectedCategory, statusFilter]);
+  }, []);
 
-  // โหลดเมื่อฟิลเตอร์เปลี่ยน และเมื่อล็อกอิน/ออกจากระบบ (ข้อมูลอ่านได้เฉพาะผู้ที่ล็อกอิน)
+  // โหลดเมื่อเปิดหน้า และเมื่อล็อกอิน/ออกจากระบบ (ข้อมูลอ่านได้เฉพาะผู้ที่ล็อกอิน)
   useEffect(() => {
     if (authStatus === 'loading') return;
     loadData(true);
@@ -337,7 +324,7 @@ export default function StockDashboardPage() {
 
         {/* Ingredient Table & Filter Grid */}
         <IngredientTable
-          ingredients={ingredients}
+          ingredients={visibleIngredients}
           categories={availableCategories}
           selectedCategory={selectedCategory}
           onCategorySelect={(cat) => setSelectedCategory(cat)}
