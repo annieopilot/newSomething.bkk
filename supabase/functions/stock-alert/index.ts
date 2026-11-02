@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
 
   const { data: targets } = await db.from("line_targets").select("group_id");
   const date = new Date().toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "medium" });
-  const text = `⚠️ แจ้งเตือนสต็อก ${date}\n\n${formatRows(fresh)}\n\nพิมพ์ “สต็อก” เพื่อดูรายการทั้งหมด`;
+  const text = `⚠️ แจ้งเตือนสต็อก ${date}\n\n${formatRows(fresh)}\n\nพิมพ์ /สต็อก เพื่อดูรายการทั้งหมด`;
 
   let delivered = 0;
   const skipped: unknown[] = [];

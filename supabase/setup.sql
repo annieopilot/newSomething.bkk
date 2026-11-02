@@ -15,9 +15,24 @@ create table if not exists public.stock_alert_state (
   notified_at timestamptz not null default now()
 );
 
+-- เตือนที่ตั้งจากแชท (/เตือน, /เตือนทุกวัน)
+-- ครั้งเดียว: ลบทิ้งหลังส่ง / ทุกวัน: เลื่อน due_at ไปวันถัดไป
+create table if not exists public.reminders (
+  id         bigint generated always as identity primary key,
+  group_id   text not null references public.line_targets(group_id) on delete cascade,
+  created_by text,
+  message    text not null check (char_length(message) between 1 and 300),
+  due_at     timestamptz not null,
+  repeat     text not null default 'none' check (repeat in ('none','daily')),
+  created_at timestamptz not null default now()
+);
+create index if not exists reminders_due_at_idx on public.reminders (due_at);
+create index if not exists reminders_group_idx  on public.reminders (group_id);
+
 -- เปิด RLS โดยไม่สร้าง policy = เข้าถึงได้เฉพาะ service role (Edge Function)
 alter table public.line_targets      enable row level security;
 alter table public.stock_alert_state enable row level security;
+alter table public.reminders         enable row level security;
 
 -- view public.v_stock_status (ข้อมูลที่บอทอ่าน) อยู่ใน supabase/inventory.sql — อ่านจากตาราง items
 
@@ -57,8 +72,29 @@ select cron.schedule(
   $$
 );
 
+-- เช็กเตือนทุก 1 นาที แต่เรียก Edge Function เฉพาะตอนมีเตือนถึงเวลาจริง
+-- (นาทีที่ไม่มีอะไรต้องส่ง จะจบใน SQL ไม่เปลืองโควตา function)
+select cron.schedule(
+  'reminder-tick',
+  '* * * * *',
+  $$
+  select net.http_post(
+    url     := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url')
+               || '/functions/v1/reminder-tick',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'cron_secret')
+    ),
+    body    := '{}'::jsonb
+  )
+  where exists (select 1 from public.reminders where due_at <= now());
+  $$
+);
+
 -- ตรวจผล:
+--   select * from cron.job;
 --   select * from cron.job_run_details order by start_time desc limit 5;
 --   select id, status_code, content from net._http_response order by created desc limit 5;
 -- ยกเลิกงาน:
 --   select cron.unschedule('stock-alert-daily');
+--   select cron.unschedule('reminder-tick');
