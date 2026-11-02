@@ -10,8 +10,28 @@ import { loadInventory, updateIngredient, saveStockCounts } from '@/app/actions/
 import { Ingredient, IngredientInput, InventoryLookups, EMPTY_LOOKUPS } from '@/types/ingredient';
 
 /**
+ * น้ำหนักภาชนะในหน่วยของรายการ (tare_weight เก็บเป็นกรัม)
+ * ใช้เฉพาะรายการที่นับเป็นน้ำหนัก — หน่วยนับอื่น (ขวด/ชิ้น) ไม่มีความหมายที่จะหักภาชนะ
+ */
+function tareInItemUnit(item: Ingredient): number {
+  if (!(item.tareWeight > 0)) return 0;
+  if (item.unitCode === 'g') return item.tareWeight;
+  if (item.unitCode === 'kg') return item.tareWeight / 1000;
+  return 0;
+}
+
+/** ค่าที่กรอก → ยอดที่จะบันทึก (รายการที่มีภาชนะ: กรอกน้ำหนักรวม แล้วหักภาชนะออก) */
+function netCount(item: Ingredient, raw: string): number {
+  const value = Number(raw);
+  if (raw === '' || isNaN(value)) return NaN;
+  const net = value - tareInItemUnit(item);
+  return Math.max(0, Math.round(net * 1000) / 1000);
+}
+
+/**
  * หน้านับสต็อกสำหรับมือถือ — หนึ่งรายการต่อหนึ่งบรรทัด กรอกยอดที่นับได้แล้วกดบันทึกทีเดียว
  * ช่องที่เว้นว่างไว้ = ไม่เปลี่ยนยอด (ยอดเดิมแสดงเป็นตัวจาง)
+ * รายการที่ตั้งน้ำหนักภาชนะไว้ ให้กรอกน้ำหนักรวมจากตาชั่ง ระบบหักภาชนะให้ก่อนบันทึก
  */
 export default function StockCountPage() {
   const router = useRouter();
@@ -63,7 +83,7 @@ export default function StockCountPage() {
 
   const changedEntries = items
     .filter((item) => counts[item.id] !== undefined && counts[item.id] !== '')
-    .map((item) => ({ item, value: Number(counts[item.id]) }))
+    .map((item) => ({ item, value: netCount(item, counts[item.id]) }))
     .filter(({ item, value }) => !isNaN(value) && value !== item.currentStock);
   const changedCount = changedEntries.length;
 
@@ -114,8 +134,9 @@ export default function StockCountPage() {
 
     const savedIds = new Set(res.savedIds || []);
     if (savedIds.size > 0) {
+      const savedValues = new Map(changedEntries.map(({ item, value }) => [item.id, value]));
       setItems((prev) =>
-        prev.map((item) => (savedIds.has(item.id) ? { ...item, currentStock: Math.max(0, Number(counts[item.id])) } : item))
+        prev.map((item) => (savedIds.has(item.id) ? { ...item, currentStock: savedValues.get(item.id) ?? item.currentStock } : item))
       );
       setCounts((prev) => {
         const nextCounts = { ...prev };
@@ -236,16 +257,30 @@ export default function StockCountPage() {
           <ul className="bg-white border-y border-slate-200 divide-y divide-slate-100">
             {visibleItems.map((item, index) => {
               const value = counts[item.id] ?? '';
-              const isChanged = value !== '' && Number(value) !== item.currentStock;
+              const tare = tareInItemUnit(item);
+              const net = netCount(item, value);
+              const isChanged = value !== '' && !isNaN(net) && net !== item.currentStock;
+              const belowTare = tare > 0 && value !== '' && Number(value) < tare;
 
               return (
                 <li
                   key={item.id}
                   className={`flex items-center gap-2 pl-4 pr-2 py-1.5 ${isChanged ? 'bg-[#8B5A2B]/5' : ''}`}
                 >
-                  <span className={`flex-1 min-w-0 truncate text-sm ${isChanged ? 'font-semibold text-[#8B5A2B]' : 'text-[#1A1A1A]'}`}>
-                    {item.name}
-                  </span>
+                  <div className="flex-1 min-w-0">
+                    <span className={`block truncate text-sm ${isChanged ? 'font-semibold text-[#8B5A2B]' : 'text-[#1A1A1A]'}`}>
+                      {item.name}
+                    </span>
+                    {tare > 0 && (
+                      <span className={`block truncate text-[11px] ${belowTare ? 'text-[#C62828]' : 'text-slate-500'}`}>
+                        {value === ''
+                          ? `กรอกน้ำหนักรวมภาชนะ (หัก ${tare} ${item.unit})`
+                          : belowTare
+                            ? `น้อยกว่าน้ำหนักภาชนะ (${tare} ${item.unit})`
+                            : `หักภาชนะ ${tare} → สุทธิ ${net} ${item.unit}`}
+                      </span>
+                    )}
+                  </div>
 
                   <div className="relative w-28 shrink-0">
                     <input
