@@ -20,7 +20,7 @@ import {
   quickAdjustStock,
 } from '@/app/actions/ingredients';
 import Link from 'next/link';
-import { CheckCircle2, AlertCircle, ClipboardList } from 'lucide-react';
+import { CheckCircle2, AlertCircle, ClipboardList, History } from 'lucide-react';
 
 export default function StockDashboardPage() {
   const router = useRouter();
@@ -290,13 +290,23 @@ export default function StockDashboardPage() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-3.5 sm:py-6">
         
         {/* โหมดนับสต็อก (หน้าแยกสำหรับกรอกยอดทีละบรรทัด) */}
-        <Link
-          href="/count"
-          className="mb-3.5 sm:mb-5 h-12 w-full sm:w-auto sm:inline-flex px-5 rounded-xl bg-[#8B5A2B] active:bg-[#74491f] text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-xs touch-press transition-colors"
-        >
-          <ClipboardList className="w-4 h-4" />
-          <span>นับสต็อก</span>
-        </Link>
+        <div className="mb-3.5 sm:mb-5 flex gap-2">
+          <Link
+            href="/count"
+            className="h-12 flex-1 sm:flex-none px-5 rounded-xl bg-[#8B5A2B] active:bg-[#74491f] text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-xs touch-press transition-colors"
+          >
+            <ClipboardList className="w-4 h-4" />
+            <span>นับสต็อก</span>
+          </Link>
+          {/* ยอดสต็อกและมูลค่าที่บันทึกทุกคืน 23:59 */}
+          <Link
+            href="/history"
+            className="h-12 flex-1 sm:flex-none px-5 rounded-xl bg-white border border-slate-200 active:bg-slate-50 text-[#1A1A1A] font-semibold text-sm flex items-center justify-center gap-2 shadow-xs touch-press transition-colors"
+          >
+            <History className="w-4 h-4" />
+            <span>ยอดย้อนหลัง</span>
+          </Link>
+        </div>
 
         {loadError && (
           <div className="mb-3.5 sm:mb-5 p-3.5 rounded-xl bg-[#C62828]/10 border border-[#C62828]/20 text-[#C62828] text-sm flex items-center justify-between gap-3">

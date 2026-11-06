@@ -4,10 +4,12 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { type Row, formatRows, replyText, verifySignature } from "../_shared/line.ts";
 import { REMINDER_EXAMPLES, REMINDER_HELP, formatThai, parseReminder } from "../_shared/reminder.ts";
+import { HISTORY_HELP, stockHistoryText } from "../_shared/stock-history.ts";
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
 const STOCK_CMDS = ["สต็อก", "สต๊อก", "stock"];
+const HISTORY_CMDS = ["ยอด", "history"];
 const HELP_CMDS = ["help", "ช่วย", "คำสั่ง"];
 const MAX_REMINDERS_PER_GROUP = 50;
 
@@ -17,6 +19,8 @@ const HELP_TEXT = [
   "",
   "📦 สต็อก",
   "• /สต็อก — ดูสินค้าใกล้หมดและหมดแล้ว",
+  "",
+  HISTORY_HELP,
   "",
   REMINDER_HELP,
   "",
@@ -29,7 +33,7 @@ async function isRegistered(groupId: string) {
 }
 
 // ชื่อคำสั่งที่รู้จัก เรียงยาวก่อน เพื่อให้ "เตือนทุกวัน" ไม่ถูกจับเป็น "เตือน"
-const KNOWN_CMDS = ["register", ...STOCK_CMDS, ...HELP_CMDS, "เตือนทุกวัน", "เตือน", "รายการเตือน", "ลบเตือน"]
+const KNOWN_CMDS = ["register", ...STOCK_CMDS, ...HISTORY_CMDS, ...HELP_CMDS, "เตือนทุกวัน", "เตือน", "รายการเตือน", "ลบเตือน"]
   .sort((a, b) => b.length - a.length);
 
 // "/เตือน 15:30 xxx" หรือ "/เตือน15:30 xxx" -> { cmd: "เตือน", args: "15:30 xxx" }
@@ -162,6 +166,7 @@ Deno.serve(async (req) => {
 
     let reply: string;
     if (STOCK_CMDS.includes(cmd)) reply = await stockText();
+    else if (HISTORY_CMDS.includes(cmd)) reply = await stockHistoryText(db, args);
     else if (HELP_CMDS.includes(cmd)) reply = HELP_TEXT;
     else if (cmd === "เตือน") reply = await addReminder(gid, ev.source.userId ?? null, args, false);
     else if (cmd === "เตือนทุกวัน") reply = await addReminder(gid, ev.source.userId ?? null, args, true);
