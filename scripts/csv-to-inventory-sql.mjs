@@ -168,7 +168,21 @@ select it.id,
 
 drop table public._inventory_import;
 
+-- บันทึกเป็นยอดของ "วันนี้" (เวลาไทย) ในประวัติสต็อก — วันก่อนหน้าไม่ถูกแก้
+-- (การปรับยอดด้านบนลงเวลาเป็นตอนนี้ และ snapshot วันเก่าเก็บเป็นแถวแยกไว้แล้ว)
+do $$
+begin
+  if to_regprocedure('public.take_stock_snapshot(date)') is not null then
+    perform public.take_stock_snapshot();
+  end if;
+end $$;
+
 commit;
 
-select status, count(*) from public.v_inventory where is_active group by status order by status;`);
+-- ตรวจผล: ยอดรวมตอนนี้ (ควรเท่ากับยอดรวม stock_value ใน CSV) และยอดรายวันล่าสุด
+select 'ยอดปัจจุบัน' as รายการ, sum(greatest(stock_value, 0)) as มูลค่ารวม, count(*) as จำนวนสินค้า
+  from public.v_inventory where is_active
+union all
+select 'snapshot ' || snapshot_date, total_value, item_count
+  from (select * from public.v_stock_daily_totals order by snapshot_date desc limit 3) t;`);
 console.error(`✅ สร้าง SQL ${values.length} รายการ`);
