@@ -2,7 +2,8 @@
 // รับ event จาก LINE: ลงทะเบียนกลุ่ม ตอบคำสั่ง และตั้งเตือน (reply = ฟรี ไม่กินโควตา)
 // ทุกคำสั่งต้องขึ้นต้นด้วย "/" ข้อความอื่นบอทไม่สนใจ
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { type Row, formatRows, replyText, verifySignature } from "../_shared/line.ts";
+import { type Row, formatRows, lineGet, replyText, verifySignature } from "../_shared/line.ts";
+import { RECEIVE_HELP, receiveText, undoReceiveText } from "../_shared/receive.ts";
 import { REMINDER_EXAMPLES, REMINDER_HELP, formatThai, parseReminder } from "../_shared/reminder.ts";
 import { HISTORY_HELP, stockHistoryText } from "../_shared/stock-history.ts";
 
@@ -20,6 +21,8 @@ const HELP_TEXT = [
   "📦 สต็อก",
   "• /สต็อก — ดูสินค้าใกล้หมดและหมดแล้ว",
   "",
+  RECEIVE_HELP,
+  "",
   HISTORY_HELP,
   "",
   REMINDER_HELP,
@@ -33,7 +36,10 @@ async function isRegistered(groupId: string) {
 }
 
 // ชื่อคำสั่งที่รู้จัก เรียงยาวก่อน เพื่อให้ "เตือนทุกวัน" ไม่ถูกจับเป็น "เตือน"
-const KNOWN_CMDS = ["register", ...STOCK_CMDS, ...HISTORY_CMDS, ...HELP_CMDS, "เตือนทุกวัน", "เตือน", "รายการเตือน", "ลบเตือน"]
+const KNOWN_CMDS = [
+  "register", ...STOCK_CMDS, ...HISTORY_CMDS, ...HELP_CMDS,
+  "เตือนทุกวัน", "เตือน", "รายการเตือน", "ลบเตือน", "รับ", "ยกเลิกรับ",
+]
   .sort((a, b) => b.length - a.length);
 
 // "/เตือน 15:30 xxx" หรือ "/เตือน15:30 xxx" -> { cmd: "เตือน", args: "15:30 xxx" }
@@ -118,6 +124,17 @@ async function deleteReminder(gid: string, args: string) {
   return data.length ? `🗑️ ลบเตือน #${id} แล้ว (“${data[0].message}”)` : `❌ ไม่พบเตือน #${id} ในกลุ่มนี้`;
 }
 
+// ชื่อ LINE ของคนพิมพ์ (ใส่ในหมายเหตุรับเข้า) — ดึงไม่ได้ก็บันทึกต่อได้
+async function displayNameOf(gid: string, userId: string | null) {
+  if (!userId) return null;
+  try {
+    return (await lineGet(`/group/${gid}/member/${userId}`)).displayName as string;
+  } catch (e) {
+    console.warn("display name unavailable", String(e));
+    return null;
+  }
+}
+
 async function stockText() {
   const { data, error } = await db.from("v_stock_status").select("*").neq("status", "ok");
   if (error) {
@@ -172,6 +189,10 @@ Deno.serve(async (req) => {
     else if (cmd === "เตือนทุกวัน") reply = await addReminder(gid, ev.source.userId ?? null, args, true);
     else if (cmd === "รายการเตือน") reply = await listReminders(gid);
     else if (cmd === "ลบเตือน") reply = await deleteReminder(gid, args);
+    else if (cmd === "รับ") {
+      const userId = ev.source.userId ?? null;
+      reply = await receiveText(db, gid, userId, await displayNameOf(gid, userId), args);
+    } else if (cmd === "ยกเลิกรับ") reply = await undoReceiveText(db, gid, args);
     else reply = `ไม่รู้จักคำสั่ง “/${cmd}” พิมพ์ /คำสั่ง เพื่อดูคำสั่งทั้งหมด`;
 
     await replyText(ev.replyToken, reply);
