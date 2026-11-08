@@ -21,8 +21,30 @@ export interface Ingredient {
   packageQuantity: number | null; // 1 หน่วยซื้อ = กี่หน่วยนับ (items.purchase_pack_size)
   status: 'ok' | 'low' | 'out';
   lastMovementAt: string | null;
+  countLocations: CountLocation[]; // จุดนับ (ว่าง = นับช่องเดียวแบบเดิม)
   createdAt?: string;
   updatedAt?: string;
+}
+
+/**
+ * จุดนับของสินค้าที่วางไว้หลายที่ (ตาราง public.item_count_locations)
+ * ยอดสินค้า = ผลรวม lastCount ของทุกจุด
+ */
+export interface CountLocation {
+  id: string;
+  name: string;
+  tareWeight: number; // น้ำหนักภาชนะของจุดนี้ (กรัม)
+  lastCount: number | null; // ยอดสุทธิที่นับได้ล่าสุด, null = ยังไม่เคยนับ
+  lastCountedAt: string | null;
+  receivesPurchases: boolean; // จุดเก็บของรับเข้า (ไม่มีจุดไหนตั้ง = จุดสุดท้าย)
+}
+
+/** จุดนับในฟอร์มแก้ไขสินค้า (ไม่มี id = จุดใหม่) */
+export interface CountLocationInput {
+  id?: string;
+  name: string;
+  tareWeight: number;
+  receivesPurchases?: boolean;
 }
 
 /** การเปลี่ยนยอดแบบมีประเภท: รับเข้า (purchase) หรือ จ่ายออก/ใช้ไป (usage) */
@@ -45,6 +67,7 @@ export interface IngredientInput {
   packageQuantity?: number;
   notes?: string;
   stockMovement?: StockMovementInput; // ถ้ามี ใช้แทน currentStock
+  countLocations?: CountLocationInput[]; // ถ้ามี = ตั้งจุดนับใหม่ทั้งชุด (จุดที่ไม่อยู่ในรายการถูกลบ)
 }
 
 export interface InventoryStats {

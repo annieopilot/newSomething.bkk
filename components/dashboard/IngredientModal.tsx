@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Scale, Save, AlertCircle } from 'lucide-react';
-import { Ingredient, IngredientInput, InventoryLookups, EMPTY_LOOKUPS } from '@/types/ingredient';
+import { X, Scale, Save, AlertCircle, MapPin, Plus, Trash2, PackagePlus } from 'lucide-react';
+import { CountLocationInput, Ingredient, IngredientInput, InventoryLookups, EMPTY_LOOKUPS } from '@/types/ingredient';
 
 type StockMode = 'add' | 'subtract' | 'set';
 
@@ -52,6 +52,14 @@ export function IngredientModal({
   const [stockMode, setStockMode] = useState<StockMode>('set');
   const [stockAmount, setStockAmount] = useState<number>(0);
 
+  // จุดนับ — ส่งไปบันทึกเฉพาะเมื่อมีการแก้ (กันพังถ้ายังไม่ได้สร้างตาราง item_count_locations)
+  const [locations, setLocations] = useState<CountLocationInput[]>([]);
+  const [locationsDirty, setLocationsDirty] = useState<boolean>(false);
+  const updateLocations = (next: CountLocationInput[]) => {
+    setLocations(next);
+    setLocationsDirty(true);
+  };
+
   const baseStock = initialData?.currentStock ?? 0;
   const activeMode = STOCK_MODES.find((mode) => mode.value === stockMode) ?? STOCK_MODES[2];
   const resultingStock =
@@ -81,7 +89,21 @@ export function IngredientModal({
     setErrorMessage('');
     setStockMode('set');
     setStockAmount(0);
+    setLocations(
+      (initialData?.countLocations ?? []).map((loc) => ({
+        id: loc.id,
+        name: loc.name,
+        tareWeight: loc.tareWeight,
+        receivesPurchases: loc.receivesPurchases,
+      }))
+    );
+    setLocationsDirty(false);
   }, [initialData, isOpen]);
+
+  const hasLocations = locations.length > 0;
+  // จุดเก็บของรับเข้า: จุดที่เลือกไว้ ถ้าไม่ได้เลือก = จุดสุดท้าย (ตรงกับ trigger ในฐานข้อมูล)
+  const flaggedIndex = locations.findIndex((loc) => loc.receivesPurchases);
+  const receivingIndex = flaggedIndex >= 0 ? flaggedIndex : locations.length - 1;
 
   // หน่วยของรายการเดิมอาจไม่อยู่ในรายการตัวเลือก (เช่นโหลดตัวเลือกไม่สำเร็จ) ให้ยังเลือกค้างไว้ได้
   const unitOptions = lookups.units.includes(formData.unit) ? lookups.units : [formData.unit, ...lookups.units];
@@ -99,6 +121,16 @@ export function IngredientModal({
       return;
     }
 
+    const locationNames = locations.map((loc) => loc.name.trim());
+    if (locationNames.some((name) => name === '')) {
+      setErrorMessage('กรุณาตั้งชื่อจุดนับให้ครบ (หรือลบจุดที่ไม่ใช้)');
+      return;
+    }
+    if (new Set(locationNames).size !== locationNames.length) {
+      setErrorMessage('ชื่อจุดนับซ้ำกัน');
+      return;
+    }
+
     if (stockMode !== 'set' && stockAmount <= 0) {
       setErrorMessage(`กรุณาระบุจำนวนที่${activeMode.label}`);
       return;
@@ -106,14 +138,16 @@ export function IngredientModal({
 
     setErrorMessage('');
     // รับเข้า/จ่ายออก → บันทึกเป็นประวัติสต็อกตามประเภท, แก้ไขยอด → ตั้งยอดใหม่ (ระบบบันทึกเป็นการนับสต็อก)
+    const countLocations = locationsDirty ? locations : undefined;
     const success = await onSubmit(
       isEditMode && stockMode !== 'set'
         ? {
             ...formData,
             currentStock: baseStock,
             stockMovement: { type: stockMode === 'add' ? 'purchase' : 'usage', quantity: stockAmount },
+            countLocations,
           }
-        : { ...formData, currentStock: resultingStock }
+        : { ...formData, currentStock: resultingStock, countLocations }
     );
     if (success) {
       onClose();
@@ -238,6 +272,12 @@ export function IngredientModal({
                   )}
                 </p>
               )}
+
+              {isEditMode && (initialData?.countLocations.length ?? 0) > 0 && (
+                <p className="text-xs text-slate-500">
+                  รายการนี้นับแยกจุด — ถ้าย้ายหรือรับของเข้าจุดไหน ให้นับจุดนั้นใหม่ที่หน้านับสต็อก ยอดแต่ละจุดจะได้ตรง
+                </p>
+              )}
             </div>
 
             {/* Grid 2 Cols: Category & Unit */}
@@ -312,6 +352,9 @@ export function IngredientModal({
                   <Scale className="w-3.5 h-3.5 text-[#1565C0]" />
                   <span>น้ำหนักภาชนะเปล่า (Tare Weight)</span>
                 </label>
+                {hasLocations ? (
+                  <p className="h-12 flex items-center text-xs text-slate-500">ใช้น้ำหนักภาชนะของแต่ละจุดนับด้านล่างแทน</p>
+                ) : (
                 <div className="relative">
                   <input
                     type="number"
@@ -326,8 +369,107 @@ export function IngredientModal({
                     กรัม (g)
                   </span>
                 </div>
+                )}
               </div>
 
+            </div>
+
+            {/* Count Locations — ของที่วางไว้หลายที่ นับแยกแต่ละจุด หักภาชนะของจุดนั้น แล้วรวมเป็นยอดเดียว */}
+            <div className="p-4 rounded-xl border border-slate-200 space-y-3">
+              <div>
+                <label className="flex items-center space-x-1 text-xs font-semibold text-slate-700">
+                  <MapPin className="w-3.5 h-3.5 text-[#8B5A2B]" />
+                  <span>จุดนับ (ถ้าวางของไว้หลายที่)</span>
+                </label>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  เช่น กระปุกหน้าบาร์ + ถุงใหญ่หลังร้าน — ตอนนับกรอกแยกแต่ละจุด ระบบหักภาชนะของจุดนั้นแล้วบวกรวมให้
+                </p>
+              </div>
+
+              {locations.map((loc, index) => (
+                <div key={loc.id ?? `new-${index}`} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder={index === 0 ? 'เช่น หน้าบาร์' : 'เช่น หลังร้าน'}
+                    value={loc.name}
+                    onChange={(e) =>
+                      updateLocations(locations.map((l, i) => (i === index ? { ...l, name: e.target.value } : l)))
+                    }
+                    aria-label={`ชื่อจุดนับที่ ${index + 1}`}
+                    className="flex-1 min-w-0 h-11 px-3 rounded-lg border border-slate-300 bg-white text-sm text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent"
+                  />
+                  <div className="relative w-28 shrink-0">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.1"
+                      min="0"
+                      placeholder="ภาชนะ"
+                      value={loc.tareWeight || ''}
+                      onChange={(e) =>
+                        updateLocations(
+                          locations.map((l, i) => (i === index ? { ...l, tareWeight: parseFloat(e.target.value) || 0 } : l))
+                        )
+                      }
+                      aria-label={`น้ำหนักภาชนะของจุดนับที่ ${index + 1} (กรัม)`}
+                      className="w-full h-11 pl-3 pr-7 rounded-lg border border-slate-300 bg-white text-sm text-[#1565C0] focus:outline-none focus:ring-2 focus:ring-[#1565C0] focus:border-transparent"
+                    />
+                    <span className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-xs text-slate-500 pointer-events-none">
+                      g
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => updateLocations(locations.map((l, i) => ({ ...l, receivesPurchases: i === index })))}
+                    className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center touch-press ${
+                      index === receivingIndex
+                        ? 'bg-[#2E7D32]/10 text-[#2E7D32]'
+                        : 'text-slate-300 hover:text-slate-600 hover:bg-slate-100'
+                    }`}
+                    aria-label={`เก็บของรับเข้าที่ ${loc.name || `จุดที่ ${index + 1}`}`}
+                    aria-pressed={index === receivingIndex}
+                    title="ของรับเข้าเก็บที่จุดนี้"
+                  >
+                    <PackagePlus className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateLocations(locations.filter((_, i) => i !== index))}
+                    className="w-10 h-10 shrink-0 rounded-lg flex items-center justify-center text-slate-400 hover:text-[#C62828] hover:bg-[#C62828]/10 touch-press"
+                    aria-label={`ลบจุดนับ ${loc.name || index + 1}`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={() =>
+                  updateLocations(
+                    locations.length === 0
+                      ? [{ name: '', tareWeight: formData.tareWeight || 0 }, { name: '', tareWeight: 0 }]
+                      : [...locations, { name: '', tareWeight: 0 }]
+                  )
+                }
+                className="h-10 px-3 rounded-lg border border-dashed border-slate-300 text-xs font-semibold text-slate-600 flex items-center gap-1.5 hover:bg-slate-50 touch-press"
+              >
+                <Plus className="w-4 h-4" />
+                {locations.length === 0 ? 'แยกนับหลายจุด' : 'เพิ่มจุดนับ'}
+              </button>
+
+              {hasLocations && (
+                <p className="flex items-center gap-1 text-[11px] text-slate-500">
+                  <PackagePlus className="w-3.5 h-3.5 text-[#2E7D32] shrink-0" />
+                  ของรับเข้า (ในแอปหรือ LINE) บวกเข้าจุด “{locations[receivingIndex]?.name.trim() || `จุดที่ ${receivingIndex + 1}`}”
+                </p>
+              )}
+
+              {locationsDirty && locations.some((loc) => !loc.id) && (
+                <p className="text-[11px] text-[#E65100]">
+                  จุดใหม่ยังไม่มียอดเดิม — นับให้ครบทุกจุด 1 รอบที่หน้านับสต็อก ยอดรวมจึงจะถูกต้อง
+                </p>
+              )}
             </div>
 
             {/* Cost, Supplier & Barcode */}

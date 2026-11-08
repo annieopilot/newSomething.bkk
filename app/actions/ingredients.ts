@@ -3,6 +3,8 @@
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { getAuthenticatedClient } from '@/lib/supabase-server';
 import {
+  CountLocation,
+  CountLocationInput,
   Ingredient,
   IngredientInput,
   InventoryLookups,
@@ -78,6 +80,17 @@ async function requireClient(): Promise<{ client: Client } | { failure: WriteRes
 const toNumber = (value: unknown): number => Number(value) || 0;
 const toId = (id: string): number => Number(id);
 
+function mapLocationRow(row: any): CountLocation {
+  return {
+    id: String(row.id),
+    name: row.name || '',
+    tareWeight: toNumber(row.tare_weight),
+    lastCount: row.last_count == null ? null : toNumber(row.last_count),
+    lastCountedAt: row.last_counted_at ?? null,
+    receivesPurchases: Boolean(row.receives_purchases),
+  };
+}
+
 function mapRow(row: any): Ingredient {
   return {
     id: String(row.id),
@@ -98,6 +111,7 @@ function mapRow(row: any): Ingredient {
     packageQuantity: row.purchase_pack_size == null ? null : toNumber(row.purchase_pack_size),
     status: row.status,
     lastMovementAt: row.last_movement_at ?? null,
+    countLocations: [],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -121,16 +135,30 @@ export async function loadInventory(): Promise<{
   if ('failure' in ctx) return { ...empty, ...ctx.failure, success: false };
 
   try {
-    // ยิงพร้อมกันทั้ง 4 คำสั่ง
-    const [items, categories, units, suppliers] = await Promise.all([
+    // ยิงพร้อมกันทั้ง 5 คำสั่ง
+    const [items, categories, units, suppliers, locations] = await Promise.all([
       ctx.client.from('v_inventory').select('*').eq('is_active', true),
       ctx.client.from('item_categories').select('name').order('sort_order').order('name'),
       ctx.client.from('units').select('name_th, kind').order('kind').order('name_th'),
       ctx.client.from('suppliers').select('name').eq('is_active', true).order('name'),
+      ctx.client.from('item_count_locations').select('*').order('sort_order').order('id'),
     ]);
     if (items.error) throw items.error;
+    // ยังไม่ได้รัน supabase/count_locations.sql → ทุกรายการนับช่องเดียวแบบเดิม
+    if (locations.error) console.warn('Count locations unavailable:', locations.error.message);
 
-    const data = (items.data || []).map(mapRow);
+    const locationsByItem = new Map<string, CountLocation[]>();
+    for (const row of locations.data || []) {
+      const key = String(row.item_id);
+      const list = locationsByItem.get(key) ?? [];
+      list.push(mapLocationRow(row));
+      locationsByItem.set(key, list);
+    }
+
+    const data = (items.data || []).map((row) => ({
+      ...mapRow(row),
+      countLocations: locationsByItem.get(String(row.id)) ?? [],
+    }));
     data.sort(
       (a, b) =>
         (a.category || '').localeCompare(b.category || '', 'th') || a.name.localeCompare(b.name, 'th')
@@ -219,6 +247,41 @@ async function itemPayload(client: Client, data: Partial<IngredientInput>) {
   return payload;
 }
 
+/**
+ * ตั้งจุดนับของสินค้าให้ตรงกับรายการที่ส่งมา: จุดเดิมแก้ชื่อ/ภาชนะ/ลำดับ, จุดที่ไม่อยู่ในรายการถูกลบ, จุดใหม่เพิ่ม
+ * ยอดล่าสุดของจุดเดิมยังอยู่ (แก้น้ำหนักภาชนะไม่กระทบยอดสุทธิที่นับไว้แล้ว)
+ */
+async function syncCountLocations(client: Client, itemId: number, locations: CountLocationInput[]) {
+  const cleaned = locations
+    .map((loc, index) => ({ ...loc, name: loc.name.trim(), sortOrder: index }))
+    .filter((loc) => loc.name !== '');
+  const names = cleaned.map((loc) => loc.name);
+  if (new Set(names).size !== names.length) throw new Error('ชื่อจุดนับซ้ำกัน');
+
+  const { data: existing, error } = await client.from('item_count_locations').select('id').eq('item_id', itemId);
+  if (error) throw error;
+
+  const keepIds = new Set(cleaned.filter((loc) => loc.id).map((loc) => toId(loc.id!)));
+  const removeIds = (existing || []).map((row) => row.id as number).filter((id) => !keepIds.has(id));
+  if (removeIds.length > 0) {
+    const { error: delErr } = await client.from('item_count_locations').delete().in('id', removeIds);
+    if (delErr) throw delErr;
+  }
+
+  for (const loc of cleaned) {
+    const fields = {
+      name: loc.name,
+      tare_weight: Math.max(0, Number(loc.tareWeight) || 0),
+      sort_order: loc.sortOrder,
+      receives_purchases: Boolean(loc.receivesPurchases),
+    };
+    const { error: writeErr } = loc.id
+      ? await client.from('item_count_locations').update(fields).eq('id', toId(loc.id)).eq('item_id', itemId)
+      : await client.from('item_count_locations').insert({ ...fields, item_id: itemId });
+    if (writeErr) throw writeErr;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // เพิ่ม / แก้ / ลบ
 // ---------------------------------------------------------------------------
@@ -238,8 +301,17 @@ export async function createIngredient(data: IngredientInput): Promise<WriteResu
     const payload = await itemPayload(ctx.client, data);
     payload.current_stock = Math.max(0, Number(data.currentStock) || 0);
 
-    const { error } = await ctx.client.from('items').insert(payload);
+    const { data: created, error } = await ctx.client.from('items').insert(payload).select('id').single();
     if (error) return toWriteError(error, 'items', 'insert', 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+
+    if (data.countLocations?.length) {
+      try {
+        await syncCountLocations(ctx.client, created.id as number, data.countLocations);
+      } catch (locErr: any) {
+        revalidatePath('/');
+        return toWriteError(locErr, 'item_count_locations', 'insert', 'เพิ่มรายการแล้ว แต่บันทึกจุดนับไม่สำเร็จ');
+      }
+    }
 
     revalidatePath('/');
     return { success: true };
@@ -272,6 +344,7 @@ export async function updateIngredient(id: string, data: Partial<IngredientInput
     }
 
     if (data.stockMovement) await insertMovement(ctx.client, itemId, data.stockMovement);
+    if (data.countLocations) await syncCountLocations(ctx.client, itemId, data.countLocations);
 
     revalidatePath('/');
     return { success: true };
@@ -379,5 +452,49 @@ export async function saveStockCounts(
   } catch (error: any) {
     console.error('Failed to save stock counts:', error);
     return toWriteError(error, 'stock_movements', 'insert', 'เกิดข้อผิดพลาดในการบันทึกยอดนับ');
+  }
+}
+
+/**
+ * บันทึกยอดนับของสินค้าที่นับแยกจุด (หน้า /count) — ส่งเฉพาะจุดที่นับในรอบนี้ (ยอดสุทธิหลังหักภาชนะ)
+ * จุดที่ไม่ได้ส่งมาใช้ยอดล่าสุดของจุดนั้น แล้วตั้งยอดสินค้า = ผลรวมทุกจุด (ทำในฐานข้อมูลครั้งเดียว: record_location_counts)
+ */
+export async function saveLocationCounts(
+  entries: { itemId: string; counts: { locationId: string; count: number }[] }[]
+): Promise<WriteResult & { savedIds?: string[]; failedIds?: string[]; totals?: Record<string, number> }> {
+  const ctx = await requireClient();
+  if ('failure' in ctx) return ctx.failure;
+
+  try {
+    const results = await Promise.all(
+      entries.map(async ({ itemId, counts }) => {
+        const { data, error } = await ctx.client.rpc('record_location_counts', {
+          p_item_id: toId(itemId),
+          p_counts: counts.map((c) => ({ location_id: toId(c.locationId), count: Math.max(0, Number(c.count) || 0) })),
+        });
+        if (error) {
+          return {
+            itemId,
+            total: 0,
+            failure: toWriteError(error, 'item_count_locations', 'update', 'เกิดข้อผิดพลาดในการบันทึกยอดนับ'),
+          };
+        }
+        return { itemId, total: toNumber(data), failure: null };
+      })
+    );
+
+    const savedIds = results.filter((r) => !r.failure).map((r) => r.itemId);
+    const failedIds = results.filter((r) => r.failure).map((r) => r.itemId);
+    const totals = Object.fromEntries(results.filter((r) => !r.failure).map((r) => [r.itemId, r.total]));
+    if (savedIds.length > 0) revalidatePath('/');
+
+    if (failedIds.length > 0) {
+      const firstFailure = results.find((r) => r.failure)!.failure!;
+      return { ...firstFailure, success: false, savedIds, failedIds, totals };
+    }
+    return { success: true, savedIds, failedIds, totals };
+  } catch (error: any) {
+    console.error('Failed to save location counts:', error);
+    return toWriteError(error, 'item_count_locations', 'update', 'เกิดข้อผิดพลาดในการบันทึกยอดนับ');
   }
 }
