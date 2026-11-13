@@ -33,8 +33,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="th" className={`${inter.variable} ${prompt.variable}`}>
-      <body className="min-h-screen bg-[#F8F9FA] text-[#1A1A1A] font-sans antialiased selection:bg-[#8B5A2B]/10 selection:text-[#8B5A2B]">
+    // โหมดมืดเป็นค่าเริ่มต้น; ถ้าเคยเลือกสว่าง (localStorage "theme") สคริปต์ใน <head> สลับก่อนวาดหน้า — ดู components/ThemeToggle.tsx
+    <html lang="th" data-theme="dark" className={`${inter.variable} ${prompt.variable}`} suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{if(localStorage.getItem("theme")==="light")document.documentElement.setAttribute("data-theme","light")}catch(e){}})()`,
+          }}
+        />
+      </head>
+      <body className="min-h-screen bg-page text-ink font-sans antialiased selection:bg-accent/10 selection:text-accent">
         {children}
       </body>
     </html>

@@ -1,24 +1,86 @@
 @import "tailwindcss";
 
+/* dark: ทำงานตาม data-theme บน <html> (ตั้งโดยสคริปต์ใน app/layout.tsx) ไม่ใช่ตามการตั้งค่าเครื่อง */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * สีของธีม — คลาสในหน้าเว็บใช้ชื่อเหล่านี้ (bg-page, bg-card, text-ink, text-accent, bg-danger-strong ...)
+ * ค่าในนี้ = โหมดสว่าง, โหมดมืด (ค่าเริ่มต้น) สลับค่าที่ [data-theme="dark"] ด้านล่าง
+ *   ชื่อสี (accent, danger, ...)  ใช้กับตัวหนังสือ/ขอบ/พื้นสีอ่อน เช่น bg-danger/10 — โหมดมืดจะสว่างขึ้นให้อ่านง่าย
+ *   ชื่อสี-strong                 ใช้เป็นพื้นปุ่มทึบที่มีตัวหนังสือสีขาว — เข้มพอทั้งสองโหมด
+ */
+@theme {
+  --color-page: #F8F9FA;
+  --color-card: #FFFFFF;
+  --color-ink: #1A1A1A;
+  --color-primary: #2D2B2A;
+  --color-primary-hover: #1F1E1D;
+  --color-primary-active: #151414;
+  --color-latte: #D4A373;
+  --color-accent: #8B5A2B;
+  --color-accent-strong: #8B5A2B;
+  --color-accent-tint: #FFF8F2;
+  --color-tare: #1565C0;
+  --color-tare-strong: #1565C0;
+  --color-success: #2E7D32;
+  --color-success-strong: #2E7D32;
+  --color-warning: #E65100;
+  --color-warning-strong: #E65100;
+  --color-danger: #C62828;
+  --color-danger-strong: #C62828;
+  --color-danger-tint: #FFF5F5;
+}
+
+/* โหมดมืด (ค่าเริ่มต้น) — โทนกาแฟเข้ม; slate/emerald กลับด้านสเกล (พื้นอ่อน → พื้นเข้ม, ตัวหนังสือเข้ม → สว่าง) */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-page: #141312;
+  --color-card: #1E1C1B;
+  --color-ink: #ECE7E2;
+  --color-primary: #4A3B30;
+  --color-primary-hover: #56453A;
+  --color-primary-active: #3D3128;
+  --color-accent: #D4A373;
+  --color-accent-tint: #2A2119;
+  --color-tare: #64B5F6;
+  --color-success: #66BB6A;
+  --color-warning: #FFA040;
+  --color-danger: #EF5350;
+  --color-danger-tint: #2A1A1A;
+
+  --color-slate-50: #252220;
+  --color-slate-100: #2C2926;
+  --color-slate-200: #38342F;
+  --color-slate-300: #4A4540;
+  --color-slate-400: #7D766F;
+  --color-slate-500: #A39B93;
+  --color-slate-600: #BDB5AD;
+  --color-slate-700: #D3CCC5;
+  --color-slate-800: #E4DED8;
+  --color-slate-900: #F0EBE6;
+  --color-slate-950: #F7F3EF;
+
+  --color-emerald-50: #10241A;
+  --color-emerald-100: #15301F;
+  --color-emerald-200: #1E4A30;
+  --color-emerald-300: #2A6B45;
+  --color-emerald-500: #3DBA74;
+  --color-emerald-600: #4CC383;
+  --color-emerald-700: #74D6A0;
+  --color-emerald-800: #95E2B8;
+  --color-emerald-900: #B8EED0;
+}
+
 @layer base {
   :root {
     --font-sans: var(--font-prompt), var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    --background: #F8F9FA;
-    --foreground: #1A1A1A;
-    --card: #FFFFFF;
-    --border: #E2E8F0;
-    --primary: #2D2B2A;
-    --accent: #8B5A2B;
-    --tare: #1565C0;
-    --success: #2E7D32;
-    --warning: #E65100;
-    --danger: #C62828;
   }
 
   body {
     font-family: var(--font-sans);
-    background-color: var(--background);
-    color: var(--foreground);
+    background-color: var(--color-page);
+    color: var(--color-ink);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -30,14 +92,14 @@
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #F1F3F5;
+  background: var(--color-slate-100);
 }
 ::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
+  background: var(--color-slate-300);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94A3B8;
+  background: var(--color-slate-400);
 }
 
 /* POS Touchscreen active feedback */

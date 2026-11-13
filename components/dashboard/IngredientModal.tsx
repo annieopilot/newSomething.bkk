@@ -1,15 +1,15 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Scale, Save, AlertCircle, MapPin, Plus, Trash2, PackagePlus } from 'lucide-react';
+import { X, Scale, Save, AlertCircle, MapPin, Plus, Trash2 } from 'lucide-react';
 import { CountLocationInput, Ingredient, IngredientInput, InventoryLookups, EMPTY_LOOKUPS } from '@/types/ingredient';
 
 type StockMode = 'add' | 'subtract' | 'set';
 
 const STOCK_MODES: { value: StockMode; label: string; sign: string; activeClass: string }[] = [
-  { value: 'add', label: 'รับเข้า', sign: '+', activeClass: 'bg-[#2E7D32] text-white' },
-  { value: 'subtract', label: 'จ่ายออก', sign: '−', activeClass: 'bg-[#C62828] text-white' },
-  { value: 'set', label: 'แก้ไขยอด', sign: '', activeClass: 'bg-[#2D2B2A] text-white' },
+  { value: 'add', label: 'รับเข้า', sign: '+', activeClass: 'bg-success-strong text-white' },
+  { value: 'subtract', label: 'จ่ายออก', sign: '−', activeClass: 'bg-danger-strong text-white' },
+  { value: 'set', label: 'แก้ไขยอด', sign: '', activeClass: 'bg-primary text-white' },
 ];
 
 interface IngredientModalProps {
@@ -94,16 +94,12 @@ export function IngredientModal({
         id: loc.id,
         name: loc.name,
         tareWeight: loc.tareWeight,
-        receivesPurchases: loc.receivesPurchases,
       }))
     );
     setLocationsDirty(false);
   }, [initialData, isOpen]);
 
   const hasLocations = locations.length > 0;
-  // จุดเก็บของรับเข้า: จุดที่เลือกไว้ ถ้าไม่ได้เลือก = จุดสุดท้าย (ตรงกับ trigger ในฐานข้อมูล)
-  const flaggedIndex = locations.findIndex((loc) => loc.receivesPurchases);
-  const receivingIndex = flaggedIndex >= 0 ? flaggedIndex : locations.length - 1;
 
   // หน่วยของรายการเดิมอาจไม่อยู่ในรายการตัวเลือก (เช่นโหลดตัวเลือกไม่สำเร็จ) ให้ยังเลือกค้างไว้ได้
   const unitOptions = lookups.units.includes(formData.unit) ? lookups.units : [formData.unit, ...lookups.units];
@@ -157,18 +153,18 @@ export function IngredientModal({
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 overscroll-contain">
       <div 
-        className="relative w-full max-w-2xl bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92dvh] flex flex-col"
+        className="relative w-full max-w-2xl bg-card rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92dvh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         
         {/* Modal Header */}
-        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 flex items-center justify-between bg-[#F8F9FA] shrink-0">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 flex items-center justify-between bg-page shrink-0">
           <div className="flex items-center space-x-2.5 sm:space-x-3">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#2D2B2A] flex items-center justify-center text-white shrink-0">
-              <Scale className="w-5 h-5 text-[#D4A373]" />
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary flex items-center justify-center text-white shrink-0">
+              <Scale className="w-5 h-5 text-latte" />
             </div>
             <div>
-              <h3 className="text-base sm:text-lg font-bold text-[#1A1A1A]">
+              <h3 className="text-base sm:text-lg font-bold text-ink">
                 {isEditMode ? 'แก้ไขข้อมูลวัตถุดิบ' : 'เพิ่มวัตถุดิบใหม่เข้าคลัง'}
               </h3>
               <p className="text-[11px] sm:text-xs text-slate-500">
@@ -190,7 +186,7 @@ export function IngredientModal({
           <div className="p-4 sm:p-6 space-y-4 overflow-y-auto overscroll-contain flex-1">
             
             {errorMessage && (
-              <div className="p-3.5 rounded-lg bg-[#C62828]/10 border border-[#C62828]/20 text-[#C62828] text-sm flex items-center space-x-2">
+              <div className="p-3.5 rounded-lg bg-danger/10 border border-danger/20 text-danger text-sm flex items-center space-x-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{errorMessage}</span>
               </div>
@@ -199,7 +195,7 @@ export function IngredientModal({
             {/* Field: Name */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                ชื่อวัตถุดิบ <span className="text-[#C62828]">*</span>
+                ชื่อวัตถุดิบ <span className="text-danger">*</span>
               </label>
               <input
                 type="text"
@@ -207,18 +203,18 @@ export function IngredientModal({
                 placeholder="เช่น เมล็ดกาแฟปางขอน Washed, ไซรัปวานิลลา Monin, แก้ว 16oz"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full h-12 px-3.5 rounded-lg border border-slate-300 bg-white text-sm text-[#1A1A1A] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent transition-all"
+                className="w-full h-12 px-3.5 rounded-lg border border-slate-300 bg-card text-sm text-ink placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent transition-all"
               />
             </div>
 
             {/* CURRENT STOCK (Highlighted — ช่องที่แก้บ่อยที่สุดตอนนับสต็อกรายวัน) */}
-            <div className="p-4 rounded-xl bg-[#8B5A2B]/5 border border-[#8B5A2B]/25 space-y-3">
-              <label className="block text-sm font-bold text-[#8B5A2B]">
+            <div className="p-4 rounded-xl bg-accent/5 border border-accent/25 space-y-3">
+              <label className="block text-sm font-bold text-accent">
                 สต็อกสุทธิคงเหลือ (Current Stock)
               </label>
 
               {isEditMode && (
-                <div className="grid grid-cols-3 gap-1.5 p-1 rounded-lg bg-white border border-slate-200">
+                <div className="grid grid-cols-3 gap-1.5 p-1 rounded-lg bg-card border border-slate-200">
                   {STOCK_MODES.map((mode) => (
                     <button
                       key={mode.value}
@@ -256,7 +252,7 @@ export function IngredientModal({
                     if (stockMode === 'set') setFormData({ ...formData, currentStock: value });
                     else setStockAmount(value);
                   }}
-                  className="w-full h-16 pl-4 pr-16 rounded-lg border-2 border-[#8B5A2B]/40 bg-white text-2xl font-bold text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent transition-all"
+                  className="w-full h-16 pl-4 pr-16 rounded-lg border-2 border-accent/40 bg-card text-2xl font-bold text-ink focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent transition-all"
                 />
                 <span className="absolute inset-y-0 right-0 pr-4 flex items-center text-sm text-slate-500 font-semibold">
                   {formData.unit}
@@ -266,9 +262,9 @@ export function IngredientModal({
               {isEditMode && stockMode !== 'set' && (
                 <p className="text-sm text-slate-600">
                   ยอดเดิม <span className="font-semibold">{baseStock}</span> {activeMode.sign} {stockAmount} ={' '}
-                  <span className="font-bold text-[#1A1A1A]">{resultingStock} {formData.unit}</span>
+                  <span className="font-bold text-ink">{resultingStock} {formData.unit}</span>
                   {stockMode === 'subtract' && stockAmount > baseStock && (
-                    <span className="block text-xs text-[#C62828] mt-0.5">จ่ายออกมากกว่ายอดที่มี ระบบจะตั้งยอดเป็น 0</span>
+                    <span className="block text-xs text-danger mt-0.5">จ่ายออกมากกว่ายอดที่มี ระบบจะตั้งยอดเป็น 0</span>
                   )}
                 </p>
               )}
@@ -294,7 +290,7 @@ export function IngredientModal({
                   placeholder="เลือกหรือพิมพ์หมวดใหม่"
                   value={formData.category || ''}
                   onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  className="w-full h-12 px-3 rounded-lg border border-slate-300 bg-white text-sm text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent transition-all"
+                  className="w-full h-12 px-3 rounded-lg border border-slate-300 bg-card text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent transition-all"
                 />
                 <datalist id="ingredient-category-options">
                   {lookups.categories.map((cat) => (
@@ -306,12 +302,12 @@ export function IngredientModal({
               {/* Unit */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  หน่วยนับ (Unit) <span className="text-[#C62828]">*</span>
+                  หน่วยนับ (Unit) <span className="text-danger">*</span>
                 </label>
                 <select
                   value={formData.unit}
                   onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                  className="w-full h-12 px-3 rounded-lg border border-slate-300 bg-white text-sm text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent transition-all"
+                  className="w-full h-12 px-3 rounded-lg border border-slate-300 bg-card text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent transition-all"
                 >
                   {unitOptions.map((unit) => (
                     <option key={unit} value={unit}>
@@ -338,7 +334,7 @@ export function IngredientModal({
                     min="0"
                     value={formData.minStockLevel || ''}
                     onChange={(e) => setFormData({ ...formData, minStockLevel: parseFloat(e.target.value) || 0 })}
-                    className="w-full h-12 pl-4 pr-14 rounded-lg border border-slate-300 bg-white text-base font-bold text-[#E65100] focus:outline-none focus:ring-2 focus:ring-[#E65100] focus:border-transparent transition-all"
+                    className="w-full h-12 pl-4 pr-14 rounded-lg border border-slate-300 bg-card text-base font-bold text-warning focus:outline-none focus:ring-2 focus:ring-warning focus:border-transparent transition-all"
                   />
                   <span className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-xs text-slate-500 font-semibold">
                     {formData.unit}
@@ -349,7 +345,7 @@ export function IngredientModal({
               {/* Tare Weight */}
               <div>
                 <label className="flex items-center space-x-1 text-xs font-semibold text-slate-700 mb-1.5">
-                  <Scale className="w-3.5 h-3.5 text-[#1565C0]" />
+                  <Scale className="w-3.5 h-3.5 text-tare" />
                   <span>น้ำหนักภาชนะเปล่า (Tare Weight)</span>
                 </label>
                 {hasLocations ? (
@@ -363,7 +359,7 @@ export function IngredientModal({
                     placeholder="0.0"
                     value={formData.tareWeight || ''}
                     onChange={(e) => setFormData({ ...formData, tareWeight: parseFloat(e.target.value) || 0 })}
-                    className="w-full h-12 pl-4 pr-12 rounded-lg border border-slate-300 bg-white text-sm text-[#1565C0] focus:outline-none focus:ring-2 focus:ring-[#1565C0] focus:border-transparent transition-all"
+                    className="w-full h-12 pl-4 pr-12 rounded-lg border border-slate-300 bg-card text-sm text-tare focus:outline-none focus:ring-2 focus:ring-tare focus:border-transparent transition-all"
                   />
                   <span className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-xs text-slate-500">
                     กรัม (g)
@@ -378,11 +374,11 @@ export function IngredientModal({
             <div className="p-4 rounded-xl border border-slate-200 space-y-3">
               <div>
                 <label className="flex items-center space-x-1 text-xs font-semibold text-slate-700">
-                  <MapPin className="w-3.5 h-3.5 text-[#8B5A2B]" />
+                  <MapPin className="w-3.5 h-3.5 text-accent" />
                   <span>จุดนับ (ถ้าวางของไว้หลายที่)</span>
                 </label>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  เช่น กระปุกหน้าบาร์ + ถุงใหญ่หลังร้าน — ตอนนับกรอกแยกแต่ละจุด ระบบหักภาชนะของจุดนั้นแล้วบวกรวมให้
+                  เช่น กระปุกหน้าบาร์ + ถุงใหญ่หลังร้าน — ตอนนับกรอกแยกแต่ละจุด ระบบหักภาชนะของจุดนั้นแล้วบวกรวมเป็นยอดสต็อก (จุดที่ไม่กรอก = 0)
                 </p>
               </div>
 
@@ -396,7 +392,7 @@ export function IngredientModal({
                       updateLocations(locations.map((l, i) => (i === index ? { ...l, name: e.target.value } : l)))
                     }
                     aria-label={`ชื่อจุดนับที่ ${index + 1}`}
-                    className="flex-1 min-w-0 h-11 px-3 rounded-lg border border-slate-300 bg-white text-sm text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent"
+                    className="flex-1 min-w-0 h-11 px-3 rounded-lg border border-slate-300 bg-card text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
                   />
                   <div className="relative w-28 shrink-0">
                     <input
@@ -412,7 +408,7 @@ export function IngredientModal({
                         )
                       }
                       aria-label={`น้ำหนักภาชนะของจุดนับที่ ${index + 1} (กรัม)`}
-                      className="w-full h-11 pl-3 pr-7 rounded-lg border border-slate-300 bg-white text-sm text-[#1565C0] focus:outline-none focus:ring-2 focus:ring-[#1565C0] focus:border-transparent"
+                      className="w-full h-11 pl-3 pr-7 rounded-lg border border-slate-300 bg-card text-sm text-tare focus:outline-none focus:ring-2 focus:ring-tare focus:border-transparent"
                     />
                     <span className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-xs text-slate-500 pointer-events-none">
                       g
@@ -420,22 +416,8 @@ export function IngredientModal({
                   </div>
                   <button
                     type="button"
-                    onClick={() => updateLocations(locations.map((l, i) => ({ ...l, receivesPurchases: i === index })))}
-                    className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center touch-press ${
-                      index === receivingIndex
-                        ? 'bg-[#2E7D32]/10 text-[#2E7D32]'
-                        : 'text-slate-300 hover:text-slate-600 hover:bg-slate-100'
-                    }`}
-                    aria-label={`เก็บของรับเข้าที่ ${loc.name || `จุดที่ ${index + 1}`}`}
-                    aria-pressed={index === receivingIndex}
-                    title="ของรับเข้าเก็บที่จุดนี้"
-                  >
-                    <PackagePlus className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => updateLocations(locations.filter((_, i) => i !== index))}
-                    className="w-10 h-10 shrink-0 rounded-lg flex items-center justify-center text-slate-400 hover:text-[#C62828] hover:bg-[#C62828]/10 touch-press"
+                    className="w-10 h-10 shrink-0 rounded-lg flex items-center justify-center text-slate-400 hover:text-danger hover:bg-danger/10 touch-press"
                     aria-label={`ลบจุดนับ ${loc.name || index + 1}`}
                   >
                     <Trash2 className="w-4 h-4" />
@@ -457,19 +439,6 @@ export function IngredientModal({
                 <Plus className="w-4 h-4" />
                 {locations.length === 0 ? 'แยกนับหลายจุด' : 'เพิ่มจุดนับ'}
               </button>
-
-              {hasLocations && (
-                <p className="flex items-center gap-1 text-[11px] text-slate-500">
-                  <PackagePlus className="w-3.5 h-3.5 text-[#2E7D32] shrink-0" />
-                  ของรับเข้า (ในแอปหรือ LINE) บวกเข้าจุด “{locations[receivingIndex]?.name.trim() || `จุดที่ ${receivingIndex + 1}`}”
-                </p>
-              )}
-
-              {locationsDirty && locations.some((loc) => !loc.id) && (
-                <p className="text-[11px] text-[#E65100]">
-                  จุดใหม่ยังไม่มียอดเดิม — นับให้ครบทุกจุด 1 รอบที่หน้านับสต็อก ยอดรวมจึงจะถูกต้อง
-                </p>
-              )}
             </div>
 
             {/* Cost, Supplier & Barcode */}
@@ -486,7 +455,7 @@ export function IngredientModal({
                     placeholder="0.00"
                     value={formData.costPerUnit || ''}
                     onChange={(e) => setFormData({ ...formData, costPerUnit: parseFloat(e.target.value) || 0 })}
-                    className="w-full h-12 pl-4 pr-12 rounded-lg border border-slate-300 bg-white text-sm text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent"
+                    className="w-full h-12 pl-4 pr-12 rounded-lg border border-slate-300 bg-card text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
                   />
                   <span className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-xs text-slate-500">
                     บาท
@@ -504,7 +473,7 @@ export function IngredientModal({
                   placeholder="เลือกหรือพิมพ์ชื่อผู้ขายใหม่"
                   value={formData.supplier || ''}
                   onChange={(e) => setFormData({ ...formData, supplier: e.target.value })}
-                  className="w-full h-12 px-3.5 rounded-lg border border-slate-300 bg-white text-sm text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent"
+                  className="w-full h-12 px-3.5 rounded-lg border border-slate-300 bg-card text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
                 />
                 <datalist id="ingredient-supplier-options">
                   {lookups.suppliers.map((name) => (
@@ -524,7 +493,7 @@ export function IngredientModal({
                 placeholder="เช่น 885000100001 สำหรับสแกนบาร์โค้ดหน้าร้าน POS"
                 value={formData.barcode || ''}
                 onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
-                className="w-full h-12 px-3.5 rounded-lg border border-slate-300 bg-white text-sm font-mono text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent"
+                className="w-full h-12 px-3.5 rounded-lg border border-slate-300 bg-card text-sm font-mono text-ink focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
               />
             </div>
 
@@ -538,19 +507,19 @@ export function IngredientModal({
                 placeholder="เช่น ถุง 1kg พร้อมวาล์ว, ขวดแก้วหัวปั๊ม, เก็บในตู้เย็น 4°C"
                 value={formData.notes || ''}
                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                className="w-full p-3 rounded-lg border border-slate-300 bg-white text-sm text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent"
+                className="w-full p-3 rounded-lg border border-slate-300 bg-card text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
               />
             </div>
 
           </div>
 
           {/* Modal Footer */}
-          <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-slate-200 bg-[#F8F9FA] flex items-center justify-end space-x-2.5 shrink-0">
+          <div className="px-4 sm:px-6 py-3 sm:py-4 border-t border-slate-200 bg-page flex items-center justify-end space-x-2.5 shrink-0">
             <button
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="flex-1 sm:flex-none h-11 sm:h-12 px-5 rounded-xl border border-slate-300 bg-white text-slate-700 font-semibold text-sm hover:bg-slate-50 touch-press transition-colors disabled:opacity-50"
+              className="flex-1 sm:flex-none h-11 sm:h-12 px-5 rounded-xl border border-slate-300 bg-card text-slate-700 font-semibold text-sm hover:bg-slate-50 touch-press transition-colors disabled:opacity-50"
             >
               ยกเลิก
             </button>
@@ -558,9 +527,9 @@ export function IngredientModal({
             <button
               type="submit"
               disabled={loading}
-              className="flex-2 sm:flex-none h-11 sm:h-12 px-6 rounded-xl bg-[#2D2B2A] hover:bg-[#1f1e1d] active:bg-[#151414] text-white font-semibold text-sm flex items-center justify-center space-x-2 shadow-xs touch-press transition-colors disabled:opacity-50"
+              className="flex-2 sm:flex-none h-11 sm:h-12 px-6 rounded-xl bg-primary hover:bg-primary-hover active:bg-primary-active text-white font-semibold text-sm flex items-center justify-center space-x-2 shadow-xs touch-press transition-colors disabled:opacity-50"
             >
-              <Save className="w-4 h-4 text-[#D4A373]" />
+              <Save className="w-4 h-4 text-latte" />
               <span>{loading ? 'กำลังบันทึก...' : isEditMode ? 'บันทึกการแก้ไข' : 'เพิ่มวัตถุดิบเข้าคลัง'}</span>
             </button>
           </div>

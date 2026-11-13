@@ -18,9 +18,9 @@ export function SummaryCards({ stats, currentFilter, onFilterChange }: SummaryCa
       {/* 1. Total Items */}
       <div
         onClick={() => onFilterChange('all')}
-        className={`bg-white rounded-xl border p-3 sm:p-4 cursor-pointer touch-press transition-all ${
+        className={`bg-card rounded-xl border p-3 sm:p-4 cursor-pointer touch-press transition-all ${
           currentFilter === 'all'
-            ? 'border-[#2D2B2A] ring-2 ring-[#2D2B2A]/10 shadow-xs'
+            ? 'border-ink ring-2 ring-ink/10 shadow-xs'
             : 'border-slate-200 hover:border-slate-300'
         }`}
       >
@@ -31,7 +31,7 @@ export function SummaryCards({ stats, currentFilter, onFilterChange }: SummaryCa
           </div>
         </div>
         <div className="mt-2 sm:mt-3 flex items-baseline space-x-1">
-          <span className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-[#1A1A1A]">
+          <span className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-ink">
             {formatNumber(stats.totalItems)}
           </span>
           <span className="text-[11px] sm:text-xs text-slate-500">รายการ</span>
@@ -42,25 +42,25 @@ export function SummaryCards({ stats, currentFilter, onFilterChange }: SummaryCa
       {/* 2. Low Stock Alert */}
       <div
         onClick={() => onFilterChange(currentFilter === 'low' ? 'all' : 'low')}
-        className={`bg-white rounded-xl border p-3 sm:p-4 cursor-pointer touch-press transition-all ${
+        className={`bg-card rounded-xl border p-3 sm:p-4 cursor-pointer touch-press transition-all ${
           currentFilter === 'low'
-            ? 'border-[#E65100] ring-2 ring-[#E65100]/20 bg-[#FFF8F2]'
-            : 'border-slate-200 hover:border-[#E65100]/40'
+            ? 'border-warning ring-2 ring-warning/20 bg-accent-tint'
+            : 'border-slate-200 hover:border-warning/40'
         }`}
       >
         <div className="flex items-center justify-between">
-          <span className="text-[11px] sm:text-xs font-semibold text-[#E65100] truncate">ใกล้หมด</span>
-          <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-[#E65100]/10 flex items-center justify-center text-[#E65100] shrink-0">
+          <span className="text-[11px] sm:text-xs font-semibold text-warning truncate">ใกล้หมด</span>
+          <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-warning/10 flex items-center justify-center text-warning shrink-0">
             <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
         </div>
         <div className="mt-2 sm:mt-3 flex items-baseline space-x-1">
-          <span className={`text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight ${stats.lowStockCount > 0 ? 'text-[#E65100]' : 'text-slate-800'}`}>
+          <span className={`text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight ${stats.lowStockCount > 0 ? 'text-warning' : 'text-slate-800'}`}>
             {formatNumber(stats.lowStockCount)}
           </span>
           <span className="text-[11px] sm:text-xs text-slate-500">รายการ</span>
         </div>
-        <p className="mt-0.5 text-[10px] text-[#E65100] font-medium truncate hidden xs:block">
+        <p className="mt-0.5 text-[10px] text-warning font-medium truncate hidden xs:block">
           {stats.lowStockCount > 0 ? 'ต้องสั่งเติมด่วน' : 'ปกติ'}
         </p>
       </div>
@@ -68,39 +68,39 @@ export function SummaryCards({ stats, currentFilter, onFilterChange }: SummaryCa
       {/* 3. Out of Stock Alert */}
       <div
         onClick={() => onFilterChange(currentFilter === 'out' ? 'all' : 'out')}
-        className={`bg-white rounded-xl border p-3 sm:p-4 cursor-pointer touch-press transition-all ${
+        className={`bg-card rounded-xl border p-3 sm:p-4 cursor-pointer touch-press transition-all ${
           currentFilter === 'out'
-            ? 'border-[#C62828] ring-2 ring-[#C62828]/20 bg-[#FFF5F5]'
-            : 'border-slate-200 hover:border-[#C62828]/40'
+            ? 'border-danger ring-2 ring-danger/20 bg-danger-tint'
+            : 'border-slate-200 hover:border-danger/40'
         }`}
       >
         <div className="flex items-center justify-between">
-          <span className="text-[11px] sm:text-xs font-semibold text-[#C62828] truncate">หมดสต็อก</span>
-          <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-[#C62828]/10 flex items-center justify-center text-[#C62828] shrink-0">
+          <span className="text-[11px] sm:text-xs font-semibold text-danger truncate">หมดสต็อก</span>
+          <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-danger/10 flex items-center justify-center text-danger shrink-0">
             <XCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
         </div>
         <div className="mt-2 sm:mt-3 flex items-baseline space-x-1">
-          <span className={`text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight ${stats.outOfStockCount > 0 ? 'text-[#C62828]' : 'text-slate-800'}`}>
+          <span className={`text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight ${stats.outOfStockCount > 0 ? 'text-danger' : 'text-slate-800'}`}>
             {formatNumber(stats.outOfStockCount)}
           </span>
           <span className="text-[11px] sm:text-xs text-slate-500">รายการ</span>
         </div>
-        <p className="mt-0.5 text-[10px] text-[#C62828] font-medium truncate hidden xs:block">
+        <p className="mt-0.5 text-[10px] text-danger font-medium truncate hidden xs:block">
           {stats.outOfStockCount > 0 ? 'สินค้าหมด' : 'ไม่มีของขาด'}
         </p>
       </div>
 
       {/* 4. Total Categories */}
-      <div className="bg-white rounded-xl border border-slate-200 p-3 sm:p-4">
+      <div className="bg-card rounded-xl border border-slate-200 p-3 sm:p-4">
         <div className="flex items-center justify-between">
           <span className="text-[11px] sm:text-xs font-medium text-slate-500 truncate">หมวดหมู่</span>
-          <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-[#8B5A2B]/10 flex items-center justify-center text-[#8B5A2B] shrink-0">
+          <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-accent/10 flex items-center justify-center text-accent shrink-0">
             <Grid className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
         </div>
         <div className="mt-2 sm:mt-3 flex items-baseline space-x-1">
-          <span className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-[#1A1A1A]">
+          <span className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-ink">
             {formatNumber(stats.categoriesCount)}
           </span>
           <span className="text-[11px] sm:text-xs text-slate-500">หมวด</span>
@@ -109,7 +109,7 @@ export function SummaryCards({ stats, currentFilter, onFilterChange }: SummaryCa
       </div>
 
       {/* 5. Total Valuation (Cost) */}
-      <div className="bg-white rounded-xl border border-slate-200 p-3 sm:p-4 col-span-2 sm:col-span-1">
+      <div className="bg-card rounded-xl border border-slate-200 p-3 sm:p-4 col-span-2 sm:col-span-1">
         <div className="flex items-center justify-between">
           <span className="text-[11px] sm:text-xs font-medium text-slate-500 truncate">มูลค่าคลังประเมิน</span>
           <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-700 shrink-0">

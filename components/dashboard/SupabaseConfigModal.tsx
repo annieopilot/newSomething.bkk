@@ -32,13 +32,13 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`;
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 overscroll-contain">
       <div 
-        className="relative w-full max-w-xl bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92dvh] flex flex-col"
+        className="relative w-full max-w-xl bg-card rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92dvh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 bg-[#F8F9FA] flex items-center justify-between shrink-0">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 bg-page flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-2.5 sm:space-x-3">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-emerald-700 flex items-center justify-center text-white shrink-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-success-strong flex items-center justify-center text-white shrink-0">
               <Database className="w-5 h-5" />
             </div>
             <div>
@@ -93,7 +93,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`;
               </span>
               <button
                 onClick={() => copyToClipboard(envSample, 'env')}
-                className="text-xs text-slate-600 hover:text-slate-900 font-medium flex items-center space-x-1 border border-slate-300 rounded-lg px-2.5 py-1 bg-white touch-press"
+                className="text-xs text-slate-600 hover:text-slate-900 font-medium flex items-center space-x-1 border border-slate-300 rounded-lg px-2.5 py-1 bg-card touch-press"
               >
                 {copiedEnv ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copiedEnv ? 'คัดลอกแล้ว' : 'คัดลอกตัวอย่าง'}</span>
@@ -119,7 +119,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`;
         </div>
 
         {/* Footer */}
-        <div className="px-4 sm:px-6 py-3.5 bg-[#F8F9FA] border-t border-slate-200 flex justify-end shrink-0">
+        <div className="px-4 sm:px-6 py-3.5 bg-page border-t border-slate-200 flex justify-end shrink-0">
           <button
             onClick={onClose}
             className="w-full sm:w-auto h-11 sm:h-12 px-6 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold text-sm touch-press transition-colors"

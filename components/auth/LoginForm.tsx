@@ -104,15 +104,15 @@ export function LoginForm() {
   };
 
   return (
-    <div className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+    <div className="w-full max-w-sm bg-card rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
       {/* Brand */}
-      <div className="px-6 pt-7 pb-5 flex flex-col items-center text-center border-b border-slate-100 bg-[#F8F9FA]">
-        <div className="w-12 h-12 rounded-xl bg-[#2D2B2A] flex items-center justify-center shadow-sm mb-3">
-          <Coffee className="w-6 h-6 text-[#D4A373]" />
+      <div className="px-6 pt-7 pb-5 flex flex-col items-center text-center border-b border-slate-100 bg-page">
+        <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center shadow-sm mb-3">
+          <Coffee className="w-6 h-6 text-latte" />
         </div>
         <div className="flex items-center space-x-2">
-          <span className="text-xl font-bold tracking-tight text-[#1A1A1A]">BREW & CO.</span>
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-[#8B5A2B]/10 text-[#8B5A2B]">
+          <span className="text-xl font-bold tracking-tight text-ink">BREW & CO.</span>
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-accent/10 text-accent">
             POS
           </span>
         </div>
@@ -121,7 +121,7 @@ export function LoginForm() {
 
       <form onSubmit={handleSubmit} method="post" action="/login" className="px-6 py-6 space-y-4">
         {error && (
-          <div role="alert" className="flex items-start space-x-2 px-3 py-2.5 rounded-lg bg-[#C62828]/5 border border-[#C62828]/20 text-[#C62828] text-xs font-medium">
+          <div role="alert" className="flex items-start space-x-2 px-3 py-2.5 rounded-lg bg-danger/5 border border-danger/20 text-danger text-xs font-medium">
             <AlertCircle className="w-4 h-4 shrink-0 mt-px" />
             <span>{error}</span>
           </div>
@@ -142,7 +142,7 @@ export function LoginForm() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             disabled={loading}
-            className="w-full h-12 px-3.5 rounded-lg border border-slate-300 bg-white text-sm text-[#1A1A1A] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent transition-all disabled:opacity-60"
+            className="w-full h-12 px-3.5 rounded-lg border border-slate-300 bg-card text-sm text-ink placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent transition-all disabled:opacity-60"
           />
         </div>
 
@@ -160,19 +160,19 @@ export function LoginForm() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             disabled={loading}
-            className="w-full h-12 px-3.5 rounded-lg border border-slate-300 bg-white text-sm text-[#1A1A1A] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent transition-all disabled:opacity-60"
+            className="w-full h-12 px-3.5 rounded-lg border border-slate-300 bg-card text-sm text-ink placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent transition-all disabled:opacity-60"
           />
         </div>
 
         <button
           type="submit"
           disabled={loading || !supabase}
-          className="w-full h-12 rounded-xl bg-[#2D2B2A] hover:bg-[#1f1e1d] active:bg-[#151414] text-white font-semibold text-sm flex items-center justify-center space-x-2 shadow-xs touch-press transition-colors disabled:opacity-50"
+          className="w-full h-12 rounded-xl bg-primary hover:bg-primary-hover active:bg-primary-active text-white font-semibold text-sm flex items-center justify-center space-x-2 shadow-xs touch-press transition-colors disabled:opacity-50"
         >
           {loading ? (
-            <Loader2 className="w-4 h-4 animate-spin text-[#D4A373]" />
+            <Loader2 className="w-4 h-4 animate-spin text-latte" />
           ) : (
-            <LogIn className="w-4 h-4 text-[#D4A373]" />
+            <LogIn className="w-4 h-4 text-latte" />
           )}
           <span>{loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}</span>
         </button>
@@ -182,7 +182,7 @@ export function LoginForm() {
         </p>
 
         <div className="text-center">
-          <Link href="/" className="text-xs font-semibold text-[#8B5A2B] hover:underline">
+          <Link href="/" className="text-xs font-semibold text-accent hover:underline">
             กลับไปหน้าสต็อก (ดูอย่างเดียว)
           </Link>
         </div>

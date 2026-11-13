@@ -52,18 +52,18 @@ export function TareScaleModal({
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 overscroll-contain">
       <div 
-        className="relative w-full max-w-lg bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92dvh] flex flex-col"
+        className="relative w-full max-w-lg bg-card rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[92dvh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         
         {/* Header */}
-        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 bg-[#1565C0]/5 flex items-center justify-between shrink-0">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 bg-tare/5 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-2.5 sm:space-x-3">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#1565C0] flex items-center justify-center text-white shadow-xs shrink-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-tare-strong flex items-center justify-center text-white shadow-xs shrink-0">
               <Scale className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base sm:text-lg font-bold text-[#1565C0]">
+              <h3 className="text-base sm:text-lg font-bold text-tare">
                 เครื่องคิดเลขชั่งตัดภาชนะ (Tare)
               </h3>
               <p className="text-[11px] sm:text-xs text-slate-500">
@@ -94,7 +94,7 @@ export function TareScaleModal({
                 const found = ingredients.find((i) => i.id === e.target.value);
                 setActiveItem(found || null);
               }}
-              className="w-full h-11 sm:h-12 px-3.5 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-[#1A1A1A] focus:outline-none focus:ring-2 focus:ring-[#1565C0] focus:border-transparent transition-all"
+              className="w-full h-11 sm:h-12 px-3.5 rounded-xl border border-slate-300 bg-card text-sm font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-tare focus:border-transparent transition-all"
             >
               <option value="" disabled>-- เลือกวัตถุดิบ --</option>
               {ingredients.map((item) => (
@@ -111,7 +111,7 @@ export function TareScaleModal({
               <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
                 <div>
                   <span className="text-[11px] sm:text-xs text-slate-500 block">น้ำหนักภาชนะเปล่า (Tare)</span>
-                  <span className="text-sm sm:text-base font-bold text-[#1565C0]">
+                  <span className="text-sm sm:text-base font-bold text-tare">
                     {formatNumber(activeItem.tareWeight, 1)} g
                   </span>
                 </div>
@@ -148,7 +148,7 @@ export function TareScaleModal({
                     value={grossWeight}
                     onChange={(e) => setGrossWeight(e.target.value)}
                     autoFocus={window.matchMedia('(pointer: fine)').matches}
-                    className="w-full h-14 pl-4 pr-16 rounded-xl border-2 border-[#1565C0]/40 bg-white text-2xl font-bold text-[#1A1A1A] placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-[#1565C0] focus:border-transparent transition-all"
+                    className="w-full h-14 pl-4 pr-16 rounded-xl border-2 border-tare/40 bg-card text-2xl font-bold text-ink placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-tare focus:border-transparent transition-all"
                   />
                   <span className="absolute inset-y-0 right-0 pr-4 flex items-center text-sm font-bold text-slate-500">
                     {activeItem.unit}
@@ -172,7 +172,7 @@ export function TareScaleModal({
               </div>
 
               {/* Live Calculation Formula Card */}
-              <div className="p-3.5 sm:p-4 rounded-xl bg-[#F8F9FA] border border-slate-200 space-y-1.5 sm:space-y-2">
+              <div className="p-3.5 sm:p-4 rounded-xl bg-page border border-slate-200 space-y-1.5 sm:space-y-2">
                 <div className="text-xs font-semibold text-slate-500 flex items-center justify-between">
                   <span>สูตรคำนวณหัก Tare:</span>
                   <span className="font-mono text-[11px]">Gross ({grossNum}g) - Tare ({currentTare}g)</span>
@@ -183,7 +183,7 @@ export function TareScaleModal({
                     สต็อกสุทธิแท้จริง (Net Stock):
                   </span>
                   <div className="flex items-baseline space-x-1">
-                    <span className="text-2xl sm:text-3xl font-extrabold text-[#2E7D32] tabular-nums">
+                    <span className="text-2xl sm:text-3xl font-extrabold text-success tabular-nums">
                       {formatNumber(calculatedNet, 1)}
                     </span>
                     <span className="text-xs sm:text-sm font-bold text-slate-600">{activeItem.unit}</span>
@@ -191,7 +191,7 @@ export function TareScaleModal({
                 </div>
 
                 {grossNum > 0 && grossNum < currentTare && (
-                  <p className="text-xs text-[#C62828] flex items-center space-x-1 mt-1">
+                  <p className="text-xs text-danger flex items-center space-x-1 mt-1">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                     <span>น้ำหนักที่ชั่งได้น้อยกว่าน้ำหนักภาชนะเปล่า โปรดตรวจสอบตราชั่ง</span>
                   </p>
@@ -203,12 +203,12 @@ export function TareScaleModal({
         </div>
 
         {/* Footer */}
-        <div className="px-4 sm:px-6 py-3 sm:py-4 bg-[#F8F9FA] border-t border-slate-200 flex items-center justify-end space-x-2.5 shrink-0">
+        <div className="px-4 sm:px-6 py-3 sm:py-4 bg-page border-t border-slate-200 flex items-center justify-end space-x-2.5 shrink-0">
           <button
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="flex-1 sm:flex-none h-11 sm:h-12 px-4 rounded-xl border border-slate-300 bg-white text-slate-700 font-semibold text-sm hover:bg-slate-50 touch-press transition-colors"
+            className="flex-1 sm:flex-none h-11 sm:h-12 px-4 rounded-xl border border-slate-300 bg-card text-slate-700 font-semibold text-sm hover:bg-slate-50 touch-press transition-colors"
           >
             ยกเลิก
           </button>
@@ -217,7 +217,7 @@ export function TareScaleModal({
             type="button"
             onClick={handleApply}
             disabled={loading || !activeItem || grossNum <= 0}
-            className="flex-2 sm:flex-none h-11 sm:h-12 px-5 sm:px-6 rounded-xl bg-[#1565C0] hover:bg-[#0d47a1] text-white font-semibold text-sm flex items-center justify-center space-x-1.5 touch-press transition-colors disabled:opacity-50 shadow-xs"
+            className="flex-2 sm:flex-none h-11 sm:h-12 px-5 sm:px-6 rounded-xl bg-tare-strong hover:bg-[#0d47a1] text-white font-semibold text-sm flex items-center justify-center space-x-1.5 touch-press transition-colors disabled:opacity-50 shadow-xs"
           >
             <Check className="w-4 h-4" />
             <span>{loading ? 'กำลังบันทึก...' : 'อัปเดตสต็อกทันที'}</span>

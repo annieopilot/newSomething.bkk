@@ -20,7 +20,7 @@ import {
   quickAdjustStock,
 } from '@/app/actions/ingredients';
 import Link from 'next/link';
-import { CheckCircle2, AlertCircle, ClipboardList, History } from 'lucide-react';
+import { CheckCircle2, AlertCircle, ClipboardList, History, ShoppingCart } from 'lucide-react';
 
 export default function StockDashboardPage() {
   const router = useRouter();
@@ -240,7 +240,7 @@ export default function StockDashboardPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F8F9FA]">
+    <div className="min-h-screen flex flex-col bg-page">
       
       {/* Toast Notification Banner */}
       {toast && (
@@ -248,12 +248,12 @@ export default function StockDashboardPage() {
           <div
             className={`flex items-center justify-center sm:justify-start space-x-2.5 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium ${
               toast.type === 'success'
-                ? 'bg-[#2D2B2A] text-white border-slate-700'
-                : 'bg-[#C62828] text-white border-red-700'
+                ? 'bg-primary text-white border-slate-700'
+                : 'bg-danger-strong text-white border-red-700'
             }`}
           >
             {toast.type === 'success' ? (
-              <CheckCircle2 className="w-5 h-5 text-[#2E7D32] shrink-0" />
+              <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
             ) : (
               <AlertCircle className="w-5 h-5 text-amber-300 shrink-0" />
             )}
@@ -293,7 +293,7 @@ export default function StockDashboardPage() {
         <div className="mb-3.5 sm:mb-5 flex gap-2">
           <Link
             href="/count"
-            className="h-12 flex-1 sm:flex-none px-5 rounded-xl bg-[#8B5A2B] active:bg-[#74491f] text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-xs touch-press transition-colors"
+            className="h-12 flex-1 sm:flex-none px-5 rounded-xl bg-accent-strong active:bg-[#74491f] text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-xs touch-press transition-colors"
           >
             <ClipboardList className="w-4 h-4" />
             <span>นับสต็อก</span>
@@ -301,15 +301,23 @@ export default function StockDashboardPage() {
           {/* ยอดสต็อกและมูลค่าที่บันทึกทุกคืน 23:59 */}
           <Link
             href="/history"
-            className="h-12 flex-1 sm:flex-none px-5 rounded-xl bg-white border border-slate-200 active:bg-slate-50 text-[#1A1A1A] font-semibold text-sm flex items-center justify-center gap-2 shadow-xs touch-press transition-colors"
+            className="h-12 flex-1 sm:flex-none px-5 rounded-xl bg-card border border-slate-200 active:bg-slate-50 text-ink font-semibold text-sm flex items-center justify-center gap-2 shadow-xs touch-press transition-colors"
           >
             <History className="w-4 h-4" />
-            <span>ยอดย้อนหลัง</span>
+            <span>ใช้ของไปเท่าไหร่</span>
+          </Link>
+          {/* รายการที่หมด/ใกล้หมด แยกตามร้านที่ซื้อ */}
+          <Link
+            href="/order"
+            className="h-12 flex-1 sm:flex-none px-5 rounded-xl bg-card border border-slate-200 active:bg-slate-50 text-ink font-semibold text-sm flex items-center justify-center gap-2 shadow-xs touch-press transition-colors"
+          >
+            <ShoppingCart className="w-4 h-4" />
+            <span>ของที่ต้องสั่ง</span>
           </Link>
         </div>
 
         {loadError && (
-          <div className="mb-3.5 sm:mb-5 p-3.5 rounded-xl bg-[#C62828]/10 border border-[#C62828]/20 text-[#C62828] text-sm flex items-center justify-between gap-3">
+          <div className="mb-3.5 sm:mb-5 p-3.5 rounded-xl bg-danger/10 border border-danger/20 text-danger text-sm flex items-center justify-between gap-3">
             <span className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
               {loadError}
@@ -317,7 +325,7 @@ export default function StockDashboardPage() {
             {authStatus === 'unauthenticated' && (
               <button
                 onClick={goToLogin}
-                className="h-9 px-3 rounded-lg bg-[#C62828] text-white text-xs font-semibold shrink-0 touch-press"
+                className="h-9 px-3 rounded-lg bg-danger-strong text-white text-xs font-semibold shrink-0 touch-press"
               >
                 เข้าสู่ระบบ
               </button>

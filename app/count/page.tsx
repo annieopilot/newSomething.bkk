@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Search, X, Info, Save, Loader2, CheckCircle2, AlertCircle, LogIn } from 'lucide-react';
 import { IngredientModal } from '@/components/dashboard/IngredientModal';
 import { useAuthSession } from '@/components/auth/useAuthSession';
-import { loadInventory, updateIngredient, saveStockCounts, saveLocationCounts } from '@/app/actions/ingredients';
+import { loadInventory, updateIngredient, saveStockCounts } from '@/app/actions/ingredients';
 import { CountLocation, Ingredient, IngredientInput, InventoryLookups, EMPTY_LOOKUPS } from '@/types/ingredient';
 
 /**
@@ -32,34 +32,30 @@ function netCount(item: Ingredient, raw: string | undefined, tareGrams: number):
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 const fieldKey = (item: Ingredient, loc?: CountLocation) => (loc ? `${item.id}:${loc.id}` : item.id);
 
-type LocationPart = { loc: CountLocation; counted: boolean; value: number };
-
-/** "หน้าบาร์ 120 + จุดที่ไม่ได้นับ 850" — จุดที่ไม่ได้กรอกรวมเป็นก้อนเดียว (ใช้ยอดที่ระบบจำไว้) */
-function summaryParts(parts: LocationPart[]): string {
-  const counted = parts.filter((p) => p.counted).map((p) => `${p.loc.name} ${p.value}`);
-  const rest = parts.filter((p) => !p.counted);
-  if (rest.length > 0) counted.push(`จุดที่ไม่ได้นับ ${round3(rest.reduce((sum, p) => sum + p.value, 0))}`);
-  return counted.join(' + ');
-}
+type LocationPart = { loc: CountLocation; value: number };
 
 /**
- * รายการที่นับแยกจุด: จุดที่กรอก = ยอดใหม่ (หักภาชนะของจุดนั้น), จุดที่ว่าง = ยอดล่าสุดของจุดนั้น
- * คืน null ถ้ายังไม่ได้กรอกจุดไหนเลย
+ * รายการที่นับแยกจุด: จุดนับเป็นแค่ตัวช่วยคิดเลข — ยอดสต็อก = ผลรวมของจุดที่กรอก (หักภาชนะของแต่ละจุด)
+ * จุดที่เว้นว่าง = 0 · คืน null ถ้ายังไม่ได้กรอกจุดไหนเลย
  */
 function locationTotal(item: Ingredient, counts: Record<string, string>) {
-  const parts: LocationPart[] = item.countLocations.map((loc) => {
+  const parts: LocationPart[] = item.countLocations.flatMap((loc) => {
     const net = netCount(item, counts[fieldKey(item, loc)], loc.tareWeight);
-    return isNaN(net) ? { loc, counted: false, value: loc.lastCount ?? 0 } : { loc, counted: true, value: net };
+    return isNaN(net) ? [] : [{ loc, value: net }];
   });
-  if (!parts.some((p) => p.counted)) return null;
-  return { parts, total: round3(parts.reduce((sum, p) => sum + p.value, 0)) };
+  if (parts.length === 0) return null;
+  return {
+    parts,
+    total: round3(parts.reduce((sum, p) => sum + p.value, 0)),
+    detail: parts.map((p) => `${p.loc.name} ${p.value}`).join(', '),
+  };
 }
 
 /**
  * หน้านับสต็อกสำหรับมือถือ — หนึ่งรายการต่อหนึ่งบรรทัด กรอกยอดที่นับได้แล้วกดบันทึกทีเดียว
  * ช่องที่เว้นว่างไว้ = ไม่เปลี่ยนยอด (ยอดเดิมแสดงเป็นตัวจาง)
  * รายการที่ตั้งน้ำหนักภาชนะไว้ ให้กรอกน้ำหนักรวมจากตาชั่ง ระบบหักภาชนะให้ก่อนบันทึก
- * รายการที่ตั้งจุดนับไว้ (เช่น หน้าบาร์ + หลังร้าน) กรอกแยกแต่ละจุด ระบบรวมให้ — จุดที่ไม่ได้นับใช้ยอดเดิมของจุดนั้น
+ * รายการที่ตั้งจุดนับไว้ (เช่น หน้าบาร์ + หลังร้าน) กรอกแยกแต่ละจุด ระบบหักภาชนะแล้วรวมเป็นยอดสต็อก — จุดที่ไม่กรอก = 0
  */
 export default function StockCountPage() {
   const router = useRouter();
@@ -109,21 +105,21 @@ export default function StockCountPage() {
     };
   }, [authStatus, applyLoadResult]);
 
-  // รายการช่องเดียว: บันทึกเมื่อยอดต่างจากเดิม
-  const changedSimple = items
-    .filter((item) => item.countLocations.length === 0 && counts[item.id] !== undefined && counts[item.id] !== '')
-    .map((item) => ({ item, value: netCount(item, counts[item.id], item.tareWeight) }))
-    .filter(({ item, value }) => !isNaN(value) && value !== item.currentStock);
-
-  // รายการแยกจุด: บันทึกเมื่อกรอกอย่างน้อย 1 จุด (แม้ยอดรวมเท่าเดิม ก็ต้องเก็บยอดของจุดนั้นไว้)
-  const changedLocations = items
-    .filter((item) => item.countLocations.length > 0)
-    .map((item) => ({ item, result: locationTotal(item, counts) }))
-    .filter((entry): entry is { item: Ingredient; result: NonNullable<ReturnType<typeof locationTotal>> } =>
-      entry.result !== null
+  // ยอดใหม่ของแต่ละรายการ (บันทึกเมื่อต่างจากยอดเดิม) — รายการแยกจุดแนบวิธีคิดไว้ในหมายเหตุ
+  const changed = items
+    .map((item) => {
+      if (item.countLocations.length > 0) {
+        const result = locationTotal(item, counts);
+        return result ? { item, value: result.total, detail: result.detail } : null;
+      }
+      const value = netCount(item, counts[item.id], item.tareWeight);
+      return isNaN(value) ? null : { item, value, detail: undefined };
+    })
+    .filter((entry): entry is { item: Ingredient; value: number; detail: string | undefined } =>
+      entry !== null && entry.value !== entry.item.currentStock
     );
 
-  const changedCount = changedSimple.length + changedLocations.length;
+  const changedCount = changed.length;
 
   // เตือนก่อนปิด/รีเฟรชหน้า ถ้ามียอดที่ยังไม่บันทึก
   useEffect(() => {
@@ -173,53 +169,24 @@ export default function StockCountPage() {
     }
 
     setSaving(true);
-    const simpleRes =
-      changedSimple.length > 0
-        ? await saveStockCounts(changedSimple.map(({ item, value }) => ({ id: item.id, currentStock: value })))
-        : null;
-    const locationRes =
-      changedLocations.length > 0
-        ? await saveLocationCounts(
-            changedLocations.map(({ item, result }) => ({
-              itemId: item.id,
-              counts: result.parts.filter((p) => p.counted).map((p) => ({ locationId: p.loc.id, count: p.value })),
-            }))
-          )
-        : null;
+    const res = await saveStockCounts(
+      changed.map(({ item, value, detail }) => ({ id: item.id, currentStock: value, detail }))
+    );
     setSaving(false);
 
-    const savedSimple = new Set(simpleRes?.savedIds || []);
-    const savedLocation = new Set(locationRes?.savedIds || []);
-    const simpleValues = new Map(changedSimple.map(({ item, value }) => [item.id, value]));
-    const locationParts = new Map(changedLocations.map(({ item, result }) => [item.id, result.parts]));
-    const now = new Date().toISOString();
+    const saved = new Set(res.savedIds || []);
+    const values = new Map(changed.map(({ item, value }) => [item.id, value]));
 
-    if (savedSimple.size + savedLocation.size > 0) {
+    if (saved.size > 0) {
       setItems((prev) =>
-        prev.map((item) => {
-          if (savedSimple.has(item.id)) {
-            return { ...item, currentStock: simpleValues.get(item.id) ?? item.currentStock };
-          }
-          if (savedLocation.has(item.id)) {
-            const parts = locationParts.get(item.id) ?? [];
-            return {
-              ...item,
-              currentStock: locationRes?.totals?.[item.id] ?? item.currentStock,
-              countLocations: item.countLocations.map((loc) => {
-                const part = parts.find((p) => p.loc.id === loc.id && p.counted);
-                return part ? { ...loc, lastCount: part.value, lastCountedAt: now } : loc;
-              }),
-            };
-          }
-          return item;
-        })
+        prev.map((item) => (saved.has(item.id) ? { ...item, currentStock: values.get(item.id) ?? item.currentStock } : item))
       );
-      clearCountsFor(new Set([...savedSimple, ...savedLocation]));
+      clearCountsFor(saved);
     }
 
-    const failure = [simpleRes, locationRes].find((res) => res && !res.success);
+    const failure = res.success ? null : res;
     if (!failure) {
-      showMessage(`บันทึกยอดนับ ${savedSimple.size + savedLocation.size} รายการแล้ว`);
+      showMessage(`บันทึกยอดนับ ${saved.size} รายการแล้ว`);
     } else {
       showMessage(failure.error || 'บันทึกไม่สำเร็จ', 'error');
       if (failure.code === 'UNAUTHENTICATED') goToLogin();
@@ -270,8 +237,8 @@ export default function StockCountPage() {
           }
         }}
         aria-label={label}
-        className={`w-full h-11 pl-3 pr-11 rounded-lg border text-right text-base font-bold placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent ${
-          isChanged ? 'border-[#8B5A2B]/50 bg-white text-[#8B5A2B]' : 'border-slate-200 bg-[#F8F9FA] text-[#1A1A1A]'
+        className={`w-full h-11 pl-3 pr-11 rounded-lg border text-right text-base font-bold placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent ${
+          isChanged ? 'border-accent/50 bg-card text-accent' : 'border-slate-200 bg-page text-ink'
         }`}
       />
       <span className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-[11px] text-slate-500 pointer-events-none max-w-10 truncate">
@@ -311,13 +278,13 @@ export default function StockCountPage() {
     const hint = tareInItemUnit(item, item.tareWeight) > 0 ? tareHint(item, value, item.tareWeight, 'กรอกน้ำหนักรวมภาชนะ') : null;
 
     return (
-      <li key={item.id} className={`flex items-center gap-2 pl-4 pr-2 py-1.5 ${isChanged ? 'bg-[#8B5A2B]/5' : ''}`}>
+      <li key={item.id} className={`flex items-center gap-2 pl-4 pr-2 py-1.5 ${isChanged ? 'bg-accent/5' : ''}`}>
         <div className="flex-1 min-w-0">
-          <span className={`block truncate text-sm ${isChanged ? 'font-semibold text-[#8B5A2B]' : 'text-[#1A1A1A]'}`}>
+          <span className={`block truncate text-sm ${isChanged ? 'font-semibold text-accent' : 'text-ink'}`}>
             {item.name}
           </span>
           {hint && hint.text && (
-            <span className={`block truncate text-[11px] ${hint.error ? 'text-[#C62828]' : 'text-slate-500'}`}>{hint.text}</span>
+            <span className={`block truncate text-[11px] ${hint.error ? 'text-danger' : 'text-slate-500'}`}>{hint.text}</span>
           )}
         </div>
         {renderInput(item, item.id, String(item.currentStock), isChanged, `ยอดนับของ ${item.name}`)}
@@ -328,27 +295,26 @@ export default function StockCountPage() {
 
   const renderLocationItem = (item: Ingredient) => {
     const result = locationTotal(item, counts);
-    const isChanged = result !== null;
-    const countedSpots = result ? result.parts.filter((p) => p.counted).length : 0;
+    const isChanged = result !== null && result.total !== item.currentStock;
 
     return (
-      <li key={item.id} className={`pb-1.5 ${isChanged ? 'bg-[#8B5A2B]/5' : ''}`}>
+      <li key={item.id} className={`pb-1.5 ${isChanged ? 'bg-accent/5' : ''}`}>
         <div className="flex items-center gap-2 pl-4 pr-2 pt-1.5">
           <div className="flex-1 min-w-0">
-            <span className={`block truncate text-sm ${isChanged ? 'font-semibold text-[#8B5A2B]' : 'text-[#1A1A1A]'}`}>
+            <span className={`block truncate text-sm ${isChanged ? 'font-semibold text-accent' : 'text-ink'}`}>
               {item.name}
             </span>
             <span className="block text-[11px] text-slate-500">
               {result ? (
                 <>
-                  {summaryParts(result.parts)} ={' '}
-                  <span className="font-bold text-[#8B5A2B]">
+                  {result.parts.map((p) => `${p.loc.name} ${p.value}`).join(' + ')} ={' '}
+                  <span className="font-bold text-accent">
                     {result.total} {item.unit}
                   </span>
-                  {countedSpots < result.parts.length && ` · นับ ${countedSpots}/${result.parts.length} จุด`}
+                  {` (เดิม ${item.currentStock})`}
                 </>
               ) : (
-                `ยอดรวม ${item.currentStock} ${item.unit} · ${item.countLocations.length} จุด`
+                `สต็อก ${item.currentStock} ${item.unit} · ${item.countLocations.length} จุด`
               )}
             </span>
           </div>
@@ -359,22 +325,16 @@ export default function StockCountPage() {
           const key = fieldKey(item, loc);
           const value = counts[key] ?? '';
           const filled = !isNaN(netCount(item, value, loc.tareWeight));
-          const neverCounted = loc.lastCount === null;
-          const hint = tareHint(item, value, loc.tareWeight, neverCounted ? 'ยังไม่เคยนับ' : '');
-          const warn = value === '' && neverCounted;
+          const hint = tareHint(item, value, loc.tareWeight, '');
 
           return (
             <div key={loc.id} className="flex items-center gap-2 pl-8 pr-14 py-1">
               <div className="flex-1 min-w-0">
-                <span className={`block truncate text-[13px] ${filled ? 'font-semibold text-[#8B5A2B]' : 'text-slate-700'}`}>
+                <span className={`block truncate text-[13px] ${filled ? 'font-semibold text-accent' : 'text-slate-700'}`}>
                   {loc.name}
                 </span>
                 {hint.text && (
-                  <span
-                    className={`block truncate text-[11px] ${
-                      hint.error ? 'text-[#C62828]' : warn ? 'text-[#E65100]' : 'text-slate-500'
-                    }`}
-                  >
+                  <span className={`block truncate text-[11px] ${hint.error ? 'text-danger' : 'text-slate-500'}`}>
                     {hint.text}
                   </span>
                 )}
@@ -388,9 +348,9 @@ export default function StockCountPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] pb-28">
+    <div className="min-h-screen bg-page pb-28">
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-white border-b border-slate-200">
+      <header className="sticky top-0 z-30 bg-card border-b border-slate-200">
         <div className="max-w-2xl mx-auto px-3 sm:px-4">
           <div className="h-14 flex items-center gap-2">
             <Link
@@ -405,7 +365,7 @@ export default function StockCountPage() {
             >
               <ArrowLeft className="w-5 h-5" />
             </Link>
-            <h1 className="text-base font-bold text-[#1A1A1A] flex-1">นับสต็อก</h1>
+            <h1 className="text-base font-bold text-ink flex-1">นับสต็อก</h1>
             {authStatus === 'unauthenticated' && (
               <button
                 onClick={goToLogin}
@@ -424,7 +384,7 @@ export default function StockCountPage() {
                 key={cat}
                 onClick={() => setCategory(cat)}
                 className={`shrink-0 h-8 px-3 rounded-full text-xs font-semibold touch-press transition-colors ${
-                  category === cat ? 'bg-[#2D2B2A] text-white' : 'bg-slate-100 text-slate-600'
+                  category === cat ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600'
                 }`}
               >
                 {cat === 'all' ? 'ทั้งหมด' : cat}
@@ -439,7 +399,7 @@ export default function StockCountPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="ค้นหารายการ"
-              className="w-full h-10 pl-9 pr-9 rounded-lg bg-[#F8F9FA] border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#8B5A2B] focus:border-transparent"
+              className="w-full h-10 pl-9 pr-9 rounded-lg bg-page border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
             />
             {search && (
               <button
@@ -461,11 +421,11 @@ export default function StockCountPage() {
             <Loader2 className="w-6 h-6 animate-spin" />
           </div>
         ) : loadError ? (
-          <p className="py-16 text-center text-sm text-[#C62828]">{loadError}</p>
+          <p className="py-16 text-center text-sm text-danger">{loadError}</p>
         ) : visibleItems.length === 0 ? (
           <p className="py-16 text-center text-sm text-slate-500">ไม่พบรายการ</p>
         ) : (
-          <ul className="bg-white border-y border-slate-200 divide-y divide-slate-100">
+          <ul className="bg-card border-y border-slate-200 divide-y divide-slate-100">
             {visibleItems.map((item) =>
               item.countLocations.length > 0 ? renderLocationItem(item) : renderSimpleItem(item)
             )}
@@ -478,11 +438,11 @@ export default function StockCountPage() {
         <div className="fixed top-3 inset-x-3 z-50 max-w-2xl mx-auto">
           <div
             className={`flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white ${
-              message.type === 'success' ? 'bg-[#2D2B2A]' : 'bg-[#C62828]'
+              message.type === 'success' ? 'bg-primary' : 'bg-danger-strong'
             }`}
           >
             {message.type === 'success' ? (
-              <CheckCircle2 className="w-5 h-5 text-[#2E7D32] shrink-0" />
+              <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
             ) : (
               <AlertCircle className="w-5 h-5 text-amber-300 shrink-0" />
             )}
@@ -493,13 +453,13 @@ export default function StockCountPage() {
 
       {/* Save Bar */}
       {changedCount > 0 && (
-        <div className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 pb-[env(safe-area-inset-bottom)]">
+        <div className="fixed bottom-0 inset-x-0 z-40 bg-card border-t border-slate-200 pb-[env(safe-area-inset-bottom)]">
           <div className="max-w-2xl mx-auto px-3 py-3 flex items-center gap-2.5">
             <button
               type="button"
               onClick={() => setCounts({})}
               disabled={saving}
-              className="h-12 px-4 rounded-xl border border-slate-300 bg-white text-slate-700 font-semibold text-sm touch-press disabled:opacity-50"
+              className="h-12 px-4 rounded-xl border border-slate-300 bg-card text-slate-700 font-semibold text-sm touch-press disabled:opacity-50"
             >
               ล้าง
             </button>
@@ -507,9 +467,9 @@ export default function StockCountPage() {
               type="button"
               onClick={handleSaveAll}
               disabled={saving}
-              className="flex-1 h-12 rounded-xl bg-[#2D2B2A] active:bg-[#151414] text-white font-semibold text-sm flex items-center justify-center gap-2 touch-press disabled:opacity-50"
+              className="flex-1 h-12 rounded-xl bg-primary active:bg-primary-active text-white font-semibold text-sm flex items-center justify-center gap-2 touch-press disabled:opacity-50"
             >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 text-[#D4A373]" />}
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 text-latte" />}
               <span>{saving ? 'กำลังบันทึก...' : `บันทึกยอดนับ ${changedCount} รายการ`}</span>
             </button>
           </div>
