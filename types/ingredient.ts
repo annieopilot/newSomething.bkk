@@ -28,15 +28,12 @@ export interface Ingredient {
 
 /**
  * จุดนับของสินค้าที่วางไว้หลายที่ (ตาราง public.item_count_locations)
- * ยอดสินค้า = ผลรวม lastCount ของทุกจุด
+ * เป็นแค่ตัวช่วยคิดเลขตอนนับ: ยอดที่กรอกแต่ละจุด (หักภาชนะของจุดนั้น) รวมกัน = ยอดสต็อก — ระบบไม่จำยอดรายจุด
  */
 export interface CountLocation {
   id: string;
   name: string;
   tareWeight: number; // น้ำหนักภาชนะของจุดนี้ (กรัม)
-  lastCount: number | null; // ยอดสุทธิที่นับได้ล่าสุด, null = ยังไม่เคยนับ
-  lastCountedAt: string | null;
-  receivesPurchases: boolean; // จุดเก็บของรับเข้า (ไม่มีจุดไหนตั้ง = จุดสุดท้าย)
 }
 
 /** จุดนับในฟอร์มแก้ไขสินค้า (ไม่มี id = จุดใหม่) */
@@ -44,7 +41,6 @@ export interface CountLocationInput {
   id?: string;
   name: string;
   tareWeight: number;
-  receivesPurchases?: boolean;
 }
 
 /** การเปลี่ยนยอดแบบมีประเภท: รับเข้า (purchase) หรือ จ่ายออก/ใช้ไป (usage) */

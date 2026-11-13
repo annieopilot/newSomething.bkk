@@ -85,9 +85,6 @@ function mapLocationRow(row: any): CountLocation {
     id: String(row.id),
     name: row.name || '',
     tareWeight: toNumber(row.tare_weight),
-    lastCount: row.last_count == null ? null : toNumber(row.last_count),
-    lastCountedAt: row.last_counted_at ?? null,
-    receivesPurchases: Boolean(row.receives_purchases),
   };
 }
 
@@ -249,7 +246,6 @@ async function itemPayload(client: Client, data: Partial<IngredientInput>) {
 
 /**
  * ตั้งจุดนับของสินค้าให้ตรงกับรายการที่ส่งมา: จุดเดิมแก้ชื่อ/ภาชนะ/ลำดับ, จุดที่ไม่อยู่ในรายการถูกลบ, จุดใหม่เพิ่ม
- * ยอดล่าสุดของจุดเดิมยังอยู่ (แก้น้ำหนักภาชนะไม่กระทบยอดสุทธิที่นับไว้แล้ว)
  */
 async function syncCountLocations(client: Client, itemId: number, locations: CountLocationInput[]) {
   const cleaned = locations
@@ -273,7 +269,6 @@ async function syncCountLocations(client: Client, itemId: number, locations: Cou
       name: loc.name,
       tare_weight: Math.max(0, Number(loc.tareWeight) || 0),
       sort_order: loc.sortOrder,
-      receives_purchases: Boolean(loc.receivesPurchases),
     };
     const { error: writeErr } = loc.id
       ? await client.from('item_count_locations').update(fields).eq('id', toId(loc.id)).eq('item_id', itemId)
@@ -417,21 +412,22 @@ export async function quickAdjustStock(
 
 /**
  * บันทึกยอดนับสต็อกหลายรายการ (หน้า /count) — แต่ละรายการบันทึกส่วนต่างเป็น movement "count"
+ * detail = วิธีคิดยอดของรายการที่นับแยกจุด (เช่น "หน้าบาร์ 120, หลังร้าน 800") ต่อท้ายหมายเหตุ
  * คืนรายการ id ที่บันทึกไม่สำเร็จ เพื่อให้หน้าเว็บเก็บค่าที่ยังไม่ได้บันทึกไว้ให้ลองใหม่
  */
 export async function saveStockCounts(
-  counts: { id: string; currentStock: number }[]
+  counts: { id: string; currentStock: number; detail?: string }[]
 ): Promise<WriteResult & { savedIds?: string[]; failedIds?: string[] }> {
   const ctx = await requireClient();
   if ('failure' in ctx) return ctx.failure;
 
   try {
     const results = await Promise.all(
-      counts.map(async ({ id, currentStock }) => {
+      counts.map(async ({ id, currentStock, detail }) => {
         const { error } = await ctx.client.rpc('record_stock_count', {
           p_item_id: toId(id),
           p_counted: Math.max(0, Number(currentStock) || 0),
-          p_note: 'นับสต็อก (หน้านับสต็อก)',
+          p_note: detail ? `นับสต็อก (หน้านับสต็อก): ${detail}` : 'นับสต็อก (หน้านับสต็อก)',
         });
         if (error) {
           return { id, failure: toWriteError(error, 'stock_movements', 'insert', 'เกิดข้อผิดพลาดในการบันทึกยอดนับ') };
@@ -452,49 +448,5 @@ export async function saveStockCounts(
   } catch (error: any) {
     console.error('Failed to save stock counts:', error);
     return toWriteError(error, 'stock_movements', 'insert', 'เกิดข้อผิดพลาดในการบันทึกยอดนับ');
-  }
-}
-
-/**
- * บันทึกยอดนับของสินค้าที่นับแยกจุด (หน้า /count) — ส่งเฉพาะจุดที่นับในรอบนี้ (ยอดสุทธิหลังหักภาชนะ)
- * จุดที่ไม่ได้ส่งมาใช้ยอดล่าสุดของจุดนั้น แล้วตั้งยอดสินค้า = ผลรวมทุกจุด (ทำในฐานข้อมูลครั้งเดียว: record_location_counts)
- */
-export async function saveLocationCounts(
-  entries: { itemId: string; counts: { locationId: string; count: number }[] }[]
-): Promise<WriteResult & { savedIds?: string[]; failedIds?: string[]; totals?: Record<string, number> }> {
-  const ctx = await requireClient();
-  if ('failure' in ctx) return ctx.failure;
-
-  try {
-    const results = await Promise.all(
-      entries.map(async ({ itemId, counts }) => {
-        const { data, error } = await ctx.client.rpc('record_location_counts', {
-          p_item_id: toId(itemId),
-          p_counts: counts.map((c) => ({ location_id: toId(c.locationId), count: Math.max(0, Number(c.count) || 0) })),
-        });
-        if (error) {
-          return {
-            itemId,
-            total: 0,
-            failure: toWriteError(error, 'item_count_locations', 'update', 'เกิดข้อผิดพลาดในการบันทึกยอดนับ'),
-          };
-        }
-        return { itemId, total: toNumber(data), failure: null };
-      })
-    );
-
-    const savedIds = results.filter((r) => !r.failure).map((r) => r.itemId);
-    const failedIds = results.filter((r) => r.failure).map((r) => r.itemId);
-    const totals = Object.fromEntries(results.filter((r) => !r.failure).map((r) => [r.itemId, r.total]));
-    if (savedIds.length > 0) revalidatePath('/');
-
-    if (failedIds.length > 0) {
-      const firstFailure = results.find((r) => r.failure)!.failure!;
-      return { ...firstFailure, success: false, savedIds, failedIds, totals };
-    }
-    return { success: true, savedIds, failedIds, totals };
-  } catch (error: any) {
-    console.error('Failed to save location counts:', error);
-    return toWriteError(error, 'item_count_locations', 'update', 'เกิดข้อผิดพลาดในการบันทึกยอดนับ');
   }
 }
