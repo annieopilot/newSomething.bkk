@@ -17,7 +17,7 @@
 --   • ไม่แตะตารางเดิม supplies / stock / products (แอปเดิมยังใช้อยู่)
 --
 -- วิธีรัน: วางทั้งไฟล์ใน Supabase SQL Editor แล้ว Run (รันซ้ำได้ / อัปเกรดจากรุ่นก่อนได้)
---          จากนั้นรัน supabase/import_inventory.sql เพื่อนำเข้าข้อมูลจาก CSV
+--          จากนั้นรัน supabase/one-off/2026-11-07_import_inventory.sql เพื่อนำเข้าข้อมูลจาก CSV
 -- =====================================================================
 
 begin;
@@ -119,7 +119,7 @@ create table if not exists public.items (
 alter table public.items add column if not exists barcode     text;
 alter table public.items add column if not exists tare_weight numeric(10, 2) not null default 0
   check (tare_weight >= 0);
--- false = ไม่ต้องแจ้งเตือนใน LINE เมื่อสินค้านี้ใกล้หมด/หมด (ดู item_alert_toggle.sql)
+-- false = ไม่ต้องแจ้งเตือนใน LINE เมื่อสินค้านี้ใกล้หมด/หมด (ดู supabase/one-off/2026-11-14_item_alert_toggle.sql)
 alter table public.items add column if not exists alert_enabled boolean not null default true;
 
 create index if not exists items_category_idx on public.items (category_id);

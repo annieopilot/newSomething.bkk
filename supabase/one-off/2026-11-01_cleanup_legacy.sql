@@ -13,7 +13,7 @@ begin;
 do $$
 begin
   if to_regclass('public.items') is null or to_regclass('public.v_inventory') is null then
-    raise exception 'ยังไม่มีตารางชุดใหม่ (items / v_inventory) — รัน supabase/inventory.sql ก่อน';
+    raise exception 'ยังไม่มีตารางชุดใหม่ (items / v_inventory) — รัน supabase/schema/02_inventory.sql ก่อน';
   end if;
 end $$;
 

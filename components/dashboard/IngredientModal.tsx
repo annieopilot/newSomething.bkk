@@ -55,7 +55,7 @@ export function IngredientModal({
   // จุดนับ — ส่งไปบันทึกเฉพาะเมื่อมีการแก้ (กันพังถ้ายังไม่ได้สร้างตาราง item_count_locations)
   const [locations, setLocations] = useState<CountLocationInput[]>([]);
   const [locationsDirty, setLocationsDirty] = useState<boolean>(false);
-  // แจ้งเตือนใน LINE — ส่งไปบันทึกเฉพาะเมื่อเปลี่ยน (กันพังถ้ายังไม่ได้รัน item_alert_toggle.sql)
+  // แจ้งเตือนใน LINE — ส่งไปบันทึกเฉพาะเมื่อเปลี่ยน (กันพังถ้ายังไม่ได้รัน supabase/one-off/2026-11-14_item_alert_toggle.sql)
   const initialAlertEnabled = initialData?.alertEnabled ?? true;
   const [alertEnabled, setAlertEnabled] = useState<boolean>(true);
   const updateLocations = (next: CountLocationInput[]) => {

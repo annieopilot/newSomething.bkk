@@ -1,7 +1,7 @@
 // supabase/functions/_shared/excel-export.ts
 // คำสั่ง /excel — สร้างไฟล์ Excel จากข้อมูลล่าสุด เก็บใน Supabase Storage (bucket "exports" แบบส่วนตัว)
 // แล้วตอบเป็นลิงก์ดาวน์โหลดที่หมดอายุใน 24 ชม. (LINE bot ส่งไฟล์แนบตรงๆ ไม่ได้)
-// ต้องรัน supabase/excel_export.sql ก่อน (สร้าง bucket)
+// ต้องรัน supabase/schema/06_excel_export.sql ก่อน (สร้าง bucket)
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import * as XLSX from "npm:xlsx@0.18.5";
 
@@ -189,7 +189,7 @@ export async function excelExportText(db: SupabaseClient): Promise<string> {
   } catch (e) {
     console.error("excel export failed", e);
     const msg = String((e as { message?: string })?.message ?? e);
-    if (/bucket not found/i.test(msg)) return "❌ ยังไม่ได้ตั้งค่าที่เก็บไฟล์ — รัน supabase/excel_export.sql ใน Supabase ก่อน";
+    if (/bucket not found/i.test(msg)) return "❌ ยังไม่ได้ตั้งค่าที่เก็บไฟล์ — รัน supabase/schema/06_excel_export.sql ใน Supabase ก่อน";
     return "❌ สร้างไฟล์ไม่สำเร็จ ลองใหม่อีกครั้ง";
   }
 }

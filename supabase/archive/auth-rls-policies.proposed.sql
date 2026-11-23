@@ -23,7 +23,7 @@ SELECT relname AS table_name, relrowsecurity AS rls_enabled
 FROM pg_class
 WHERE relnamespace = 'public'::regnamespace AND relname IN ('supplies', 'stock', 'products');
 
--- หมายเหตุ: supabase/schema.sql เดิมมี policy "Allow public all access to stock" (FOR ALL USING (true))
+-- หมายเหตุ: supabase/archive/old_ingredients_schema.sql เดิมมี policy "Allow public all access to stock" (FOR ALL USING (true))
 -- ถ้ายังมีอยู่ แปลว่าใครก็เขียนตาราง stock ได้โดยไม่ต้องล็อกอิน ควรพิจารณาลบ:
 -- DROP POLICY IF EXISTS "Allow public all access to stock" ON public.stock;
 

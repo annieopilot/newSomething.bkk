@@ -45,8 +45,9 @@ next-env.d.ts
 .env.line
 
 # ข้อมูลร้าน (ต้นทุน ชื่อพนักงาน อีเมล) — เก็บไว้ในเครื่อง ไม่ขึ้น repo public
+/data/
 /*.csv
 /*.xlsx
 ~$*
-supabase/import_*.sql
-supabase/verify_old_xlsx.sql
+supabase/one-off/*import_*.sql
+supabase/one-off/*verify_old_xlsx.sql

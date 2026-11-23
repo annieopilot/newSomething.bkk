@@ -10,7 +10,7 @@ import {
 } from '@/types/stock-history';
 
 /**
- * ยอดสต็อกย้อนหลัง (supabase/stock_history.sql) — บันทึกทุกคืน 23:59 โดย pg_cron
+ * ยอดสต็อกย้อนหลัง (supabase/schema/03_stock_history.sql) — บันทึกทุกคืน 23:59 โดย pg_cron
  *   v_stock_daily_totals     ยอดรวมแต่ละวัน (วันละ 1 แถว จึงโหลดทั้งหมดได้)
  *   stock_daily_snapshots    ยอดรายสินค้าของวันที่เลือก
  * อ่านได้เฉพาะผู้ที่ล็อกอิน (RLS)

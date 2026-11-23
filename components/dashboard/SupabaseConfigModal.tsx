@@ -80,7 +80,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`;
               </a>
             </div>
             <p className="text-xs text-slate-600 leading-relaxed">
-              ไปที่เมนู <strong>SQL Editor</strong> ใน Supabase Dashboard แล้ววางโค้ดจากไฟล์ <code className="bg-slate-200 px-1.5 py-0.5 rounded text-slate-800 text-[11px]">supabase/schema.sql</code> ซึ่งเตรียมตาราง <code className="bg-slate-200 px-1 py-0.5 rounded text-[11px]">ingredients</code> (พร้อมฟิลด์ Tare Weight สำหรับตัดน้ำหนักภาชนะ, Barcode, หมวดหมู่กาแฟ), RLS Policies และ Seed ข้อมูล 18 รายการไว้พร้อมใช้งาน
+              ไปที่เมนู <strong>SQL Editor</strong> ใน Supabase Dashboard แล้วรันไฟล์ในโฟลเดอร์ <code className="bg-slate-200 px-1.5 py-0.5 rounded text-slate-800 text-[11px]">supabase/schema/</code> ทีละไฟล์ตามเลขลำดับ (01, 02, …) เพื่อสร้างตารางสินค้า ประวัติเข้า-ออก ยอดรายวัน และสิทธิ์การเข้าถึง (RLS)
             </p>
           </div>
 

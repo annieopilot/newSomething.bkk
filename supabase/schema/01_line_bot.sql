@@ -34,7 +34,7 @@ alter table public.line_targets      enable row level security;
 alter table public.stock_alert_state enable row level security;
 alter table public.reminders         enable row level security;
 
--- view public.v_stock_status (ข้อมูลที่บอทอ่าน) อยู่ใน supabase/inventory.sql — อ่านจากตาราง items
+-- view public.v_stock_status (ข้อมูลที่บอทอ่าน) อยู่ใน supabase/schema/02_inventory.sql — อ่านจากตาราง items
 
 -- =====================================================================
 -- ส่วนที่ 2: ตั้งเวลาเรียก stock-alert  (รันหลัง deploy function แล้ว)

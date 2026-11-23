@@ -14,7 +14,7 @@ import {
 import { revalidatePath } from 'next/cache';
 
 /**
- * ข้อมูลสต็อกอยู่ในตารางชุดใหม่ (supabase/inventory.sql):
+ * ข้อมูลสต็อกอยู่ในตารางชุดใหม่ (supabase/schema/02_inventory.sql):
  *   items            — สินค้า/วัตถุดิบ
  *   stock_movements  — ประวัติรับเข้า/ใช้/นับ (ยอดคงเหลือคำนวณจากตารางนี้ด้วย trigger)
  *   v_inventory      — view สำหรับอ่าน (รวมหมวด หน่วย ผู้ขาย สถานะ)
@@ -109,7 +109,7 @@ function mapRow(row: any): Ingredient {
     notes: row.notes ?? null,
     packageQuantity: row.purchase_pack_size == null ? null : toNumber(row.purchase_pack_size),
     status: row.status,
-    alertEnabled: row.alert_enabled !== false, // ยังไม่ได้รัน item_alert_toggle.sql = เตือนทุกรายการ
+    alertEnabled: row.alert_enabled !== false, // ยังไม่ได้รัน supabase/one-off/2026-11-14_item_alert_toggle.sql = เตือนทุกรายการ
     lastMovementAt: row.last_movement_at ?? null,
     countLocations: [],
     createdAt: row.created_at,
@@ -144,7 +144,7 @@ export async function loadInventory(): Promise<{
       ctx.client.from('item_count_locations').select('*').order('sort_order').order('id'),
     ]);
     if (items.error) throw items.error;
-    // ยังไม่ได้รัน supabase/count_locations.sql → ทุกรายการนับช่องเดียวแบบเดิม
+    // ยังไม่ได้รัน supabase/schema/04_count_locations.sql → ทุกรายการนับช่องเดียวแบบเดิม
     if (locations.error) console.warn('Count locations unavailable:', locations.error.message);
 
     const locationsByItem = new Map<string, CountLocation[]>();

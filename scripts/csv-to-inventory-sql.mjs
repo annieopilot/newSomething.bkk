@@ -1,5 +1,5 @@
 // แปลง Products.csv + StockSummary.csv (export จากระบบปัจจุบัน) เป็น SQL นำเข้า Inventory v2
-// ใช้: node scripts/csv-to-inventory-sql.mjs [Products.csv] [StockSummary.csv] > supabase/import_inventory.sql
+// ใช้: node scripts/csv-to-inventory-sql.mjs [data/legacy/Products.csv] [data/legacy/StockSummary.csv] > supabase/one-off/<วันที่>_import_inventory.sql
 //
 // รันซ้ำได้ทุกครั้งที่ export CSV ใหม่:
 //   • สินค้า: upsert ตาม legacy_id (product_id เดิม)
@@ -7,7 +7,7 @@
 // คำเตือนการตรวจข้อมูลออกทาง stderr (ไม่ปนกับ SQL)
 import { readFileSync } from "node:fs";
 
-const [productsPath = "Products.csv", summaryPath = "StockSummary.csv"] = process.argv.slice(2);
+const [productsPath = "data/legacy/Products.csv", summaryPath = "data/legacy/StockSummary.csv"] = process.argv.slice(2);
 
 function parseCsv(path) {
   const text = readFileSync(path, "utf8").replace(/^﻿/, "");
@@ -88,7 +88,7 @@ for (const p of products) {
 }
 
 console.log(`-- สร้างอัตโนมัติจาก ${productsPath} + ${summaryPath} เมื่อ ${new Date().toISOString()}
--- ต้องรัน supabase/inventory.sql ก่อน (ครั้งแรกครั้งเดียว) แล้วรันไฟล์นี้ใน Supabase SQL Editor
+-- ต้องรัน supabase/schema/02_inventory.sql ก่อน (ครั้งแรกครั้งเดียว) แล้วรันไฟล์นี้ใน Supabase SQL Editor
 -- รันซ้ำได้: สินค้าอัปเดตตาม legacy_id, สต็อกบันทึกเฉพาะส่วนต่าง
 
 begin;

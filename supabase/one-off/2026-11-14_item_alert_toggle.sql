@@ -1,5 +1,5 @@
 -- =====================================================================
--- ปุ่ม "ไม่ต้องเตือนเมื่อหมด" ต่อสินค้า  (รันใน Supabase SQL Editor หลัง inventory.sql — รันซ้ำได้)
+-- ปุ่ม "ไม่ต้องเตือนเมื่อหมด" ต่อสินค้า  (รันใน Supabase SQL Editor หลัง supabase/schema/02_inventory.sql — รันซ้ำได้)
 --
 -- items.alert_enabled = false → สินค้านี้ไม่ถูกแจ้งใน LINE (ทั้งแจ้งเตือนอัตโนมัติ stock-alert และคำสั่ง /สต็อก)
 -- ทำที่ view v_stock_status จึงไม่ต้อง deploy Edge Function ใหม่
