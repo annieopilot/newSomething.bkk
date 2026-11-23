@@ -11,3 +11,4 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 ## ข้อมูลสต็อกระบบเดิม
 
 ก่อนอ่าน/นำเข้าไฟล์ `ข้อมูลต๊อกอันเก่า.xlsx` หรือ `*Products.csv` / `*StockSummary.csv` ให้อ่าน `docs/legacy-stock-excel.md` ก่อน (ADJUST = ยอดที่นับได้, เวลาไทยไม่มี timezone, product_id 001 กลายเป็น 1)
+ถ้าถูกขอให้เทียบ Google Sheets ระบบเดิม (Products / StockSummary) กับเว็บ → รัน `node scripts/compare-sheet-vs-web.mjs <วันตัดยอด>` และอ่านหัวข้อ "เทียบ Google Sheets" ในไฟล์เดียวกัน (แก้วร้อน = 001 + "แก้วร้อนน")
