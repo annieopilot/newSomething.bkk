@@ -2,6 +2,7 @@
 // รับ event จาก LINE: ลงทะเบียนกลุ่ม ตอบคำสั่ง และตั้งเตือน (reply = ฟรี ไม่กินโควตา)
 // ทุกคำสั่งต้องขึ้นต้นด้วย "/" ข้อความอื่นบอทไม่สนใจ
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { EXCEL_CMDS, EXCEL_HELP, excelExportText } from "../_shared/excel-export.ts";
 import { type Row, formatRows, lineGet, replyText, verifySignature } from "../_shared/line.ts";
 import { RECEIVE_HELP, receiveText, undoReceiveText } from "../_shared/receive.ts";
 import { REMINDER_EXAMPLES, REMINDER_HELP, formatThai, parseReminder } from "../_shared/reminder.ts";
@@ -25,6 +26,8 @@ const HELP_TEXT = [
   "",
   HISTORY_HELP,
   "",
+  EXCEL_HELP,
+  "",
   REMINDER_HELP,
   "",
   "❓ /คำสั่ง — ดูหน้านี้อีกครั้ง",
@@ -37,7 +40,7 @@ async function isRegistered(groupId: string) {
 
 // ชื่อคำสั่งที่รู้จัก เรียงยาวก่อน เพื่อให้ "เตือนทุกวัน" ไม่ถูกจับเป็น "เตือน"
 const KNOWN_CMDS = [
-  "register", ...STOCK_CMDS, ...HISTORY_CMDS, ...HELP_CMDS,
+  "register", ...STOCK_CMDS, ...HISTORY_CMDS, ...HELP_CMDS, ...EXCEL_CMDS,
   "เตือนทุกวัน", "เตือน", "รายการเตือน", "ลบเตือน", "รับ", "ยกเลิกรับ",
 ]
   .sort((a, b) => b.length - a.length);
@@ -185,6 +188,7 @@ Deno.serve(async (req) => {
     if (STOCK_CMDS.includes(cmd)) reply = await stockText();
     else if (HISTORY_CMDS.includes(cmd)) reply = await stockHistoryText(db, args);
     else if (HELP_CMDS.includes(cmd)) reply = HELP_TEXT;
+    else if (EXCEL_CMDS.includes(cmd)) reply = await excelExportText(db);
     else if (cmd === "เตือน") reply = await addReminder(gid, ev.source.userId ?? null, args, false);
     else if (cmd === "เตือนทุกวัน") reply = await addReminder(gid, ev.source.userId ?? null, args, true);
     else if (cmd === "รายการเตือน") reply = await listReminders(gid);
