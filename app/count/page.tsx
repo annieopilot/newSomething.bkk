@@ -44,11 +44,33 @@ function locationTotal(item: Ingredient, counts: Record<string, string>) {
     return isNaN(net) ? [] : [{ loc, value: net }];
   });
   if (parts.length === 0) return null;
+  // ยอดของทุกจุดในการนับครั้งนี้ (จุดที่เว้นว่าง = 0) — ระบบจำเป็นยอดนับล่าสุดของแต่ละจุด
+  const locations = item.countLocations.map((loc) => ({
+    id: loc.id,
+    value: parts.find((p) => p.loc.id === loc.id)?.value ?? 0,
+  }));
   return {
     parts,
+    locations,
     total: round3(parts.reduce((sum, p) => sum + p.value, 0)),
     detail: parts.map((p) => `${p.loc.name} ${p.value}`).join(', '),
   };
+}
+
+/** ยอดรายจุดในการนับครั้งนี้ต่างจากที่จำไว้ครั้งก่อนไหม (เช่น ย้ายของจากหลังร้านมาหน้าบาร์ ยอดรวมเท่าเดิม) */
+function locationsChanged(item: Ingredient, locations: { id: string; value: number }[]) {
+  return locations.some(({ id, value }) => item.countLocations.find((loc) => loc.id === id)?.lastCount !== value);
+}
+
+/** เวลานับล่าสุดของจุด เช่น "22 พ.ย. 19:13" (เวลาไทย) */
+function formatCountedAt(iso: string) {
+  return new Date(iso).toLocaleString('th-TH', {
+    timeZone: 'Asia/Bangkok',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 /**
@@ -56,6 +78,7 @@ function locationTotal(item: Ingredient, counts: Record<string, string>) {
  * ช่องที่เว้นว่างไว้ = ไม่เปลี่ยนยอด (ยอดเดิมแสดงเป็นตัวจาง)
  * รายการที่ตั้งน้ำหนักภาชนะไว้ ให้กรอกน้ำหนักรวมจากตาชั่ง ระบบหักภาชนะให้ก่อนบันทึก
  * รายการที่ตั้งจุดนับไว้ (เช่น หน้าบาร์ + หลังร้าน) กรอกแยกแต่ละจุด ระบบหักภาชนะแล้วรวมเป็นยอดสต็อก — จุดที่ไม่กรอก = 0
+ * และจำยอดของแต่ละจุดไว้ แสดงเป็น "ครั้งก่อน" ใต้ชื่อจุดในการนับรอบถัดไป
  */
 export default function StockCountPage() {
   const router = useRouter();
@@ -106,17 +129,25 @@ export default function StockCountPage() {
   }, [authStatus, applyLoadResult]);
 
   // ยอดใหม่ของแต่ละรายการ (บันทึกเมื่อต่างจากยอดเดิม) — รายการแยกจุดแนบวิธีคิดไว้ในหมายเหตุ
+  // รายการแยกจุดบันทึกด้วยถ้ายอดรายจุดเปลี่ยน แม้ยอดรวมเท่าเดิม (ระบบจะได้จำยอดรายจุดใหม่)
+  type CountEntry = {
+    item: Ingredient;
+    value: number;
+    detail?: string;
+    locations?: { id: string; value: number }[];
+  };
   const changed = items
-    .map((item) => {
+    .map((item): CountEntry | null => {
       if (item.countLocations.length > 0) {
         const result = locationTotal(item, counts);
-        return result ? { item, value: result.total, detail: result.detail } : null;
+        return result ? { item, value: result.total, detail: result.detail, locations: result.locations } : null;
       }
       const value = netCount(item, counts[item.id], item.tareWeight);
-      return isNaN(value) ? null : { item, value, detail: undefined };
+      return isNaN(value) ? null : { item, value };
     })
-    .filter((entry): entry is { item: Ingredient; value: number; detail: string | undefined } =>
-      entry !== null && entry.value !== entry.item.currentStock
+    .filter((entry): entry is CountEntry =>
+      entry !== null &&
+      (entry.value !== entry.item.currentStock || (!!entry.locations && locationsChanged(entry.item, entry.locations)))
     );
 
   const changedCount = changed.length;
@@ -170,16 +201,27 @@ export default function StockCountPage() {
 
     setSaving(true);
     const res = await saveStockCounts(
-      changed.map(({ item, value, detail }) => ({ id: item.id, currentStock: value, detail }))
+      changed.map(({ item, value, detail, locations }) => ({ id: item.id, currentStock: value, detail, locations }))
     );
     setSaving(false);
 
     const saved = new Set(res.savedIds || []);
-    const values = new Map(changed.map(({ item, value }) => [item.id, value]));
+    const entries = new Map(changed.map((entry) => [entry.item.id, entry]));
+    const countedAt = res.countedAt ?? new Date().toISOString();
 
     if (saved.size > 0) {
       setItems((prev) =>
-        prev.map((item) => (saved.has(item.id) ? { ...item, currentStock: values.get(item.id) ?? item.currentStock } : item))
+        prev.map((item) => {
+          const entry = saved.has(item.id) ? entries.get(item.id) : undefined;
+          if (!entry) return item;
+          const countLocations = entry.locations
+            ? item.countLocations.map((loc) => {
+                const counted = entry.locations!.find((l) => l.id === loc.id);
+                return counted ? { ...loc, lastCount: counted.value, lastCountedAt: countedAt } : loc;
+              })
+            : item.countLocations;
+          return { ...item, currentStock: entry.value, countLocations };
+        })
       );
       clearCountsFor(saved);
     }
@@ -295,7 +337,8 @@ export default function StockCountPage() {
 
   const renderLocationItem = (item: Ingredient) => {
     const result = locationTotal(item, counts);
-    const isChanged = result !== null && result.total !== item.currentStock;
+    const isChanged =
+      result !== null && (result.total !== item.currentStock || locationsChanged(item, result.locations));
 
     return (
       <li key={item.id} className={`pb-1.5 ${isChanged ? 'bg-accent/5' : ''}`}>
@@ -336,6 +379,12 @@ export default function StockCountPage() {
                 {hint.text && (
                   <span className={`block truncate text-[11px] ${hint.error ? 'text-danger' : 'text-slate-500'}`}>
                     {hint.text}
+                  </span>
+                )}
+                {loc.lastCount !== null && (
+                  <span className="block truncate text-[11px] text-slate-400">
+                    ครั้งก่อน {loc.lastCount} {item.unit}
+                    {loc.lastCountedAt && ` · ${formatCountedAt(loc.lastCountedAt)}`}
                   </span>
                 )}
               </div>

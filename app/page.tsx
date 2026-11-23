@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo, useTransition } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore, useTransition } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Header } from '@/components/dashboard/Header';
 import { SummaryCards } from '@/components/dashboard/SummaryCards';
@@ -19,8 +19,68 @@ import {
   deleteIngredient,
   quickAdjustStock,
 } from '@/app/actions/ingredients';
+import { loadStockHistory } from '@/app/actions/stock-history';
+import { StockSnapshotItem } from '@/types/stock-history';
 import Link from 'next/link';
-import { CheckCircle2, AlertCircle, ClipboardList, History, ShoppingCart } from 'lucide-react';
+import {
+  CheckCircle2,
+  AlertCircle,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  History,
+  Loader2,
+  ShoppingCart,
+} from 'lucide-react';
+
+/** วันนี้ตามเวลาไทย "YYYY-MM-DD" — อ่านเฉพาะฝั่ง browser (ตอน prerender ห้ามเรียก new Date() เพราะเปิด cacheComponents) */
+const noSubscribe = () => () => {};
+const todayInThailand = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+
+/** เลื่อนวันที่ "YYYY-MM-DD" ไป n วัน */
+function shiftDate(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** "2026-11-20" → "ศ. 20 พ.ย. 2569" */
+const thaiDate = (iso: string) =>
+  new Date(`${iso}T00:00:00Z`).toLocaleDateString('th-TH', {
+    timeZone: 'UTC',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+
+/** ยอดสิ้นวันของสินค้า (stock_daily_snapshots) → รูปแบบเดียวกับรายการปัจจุบัน เพื่อใช้ตาราง/สรุปเดิมได้ */
+function snapshotToIngredient(s: StockSnapshotItem, live: Ingredient | undefined): Ingredient {
+  return {
+    sku: null,
+    unitCode: '',
+    tareWeight: 0,
+    suggestedOrderQty: 0,
+    barcode: null,
+    supplier: null,
+    notes: null,
+    packageQuantity: null,
+    alertEnabled: true,
+    ...live,
+    id: s.itemId,
+    name: s.name,
+    category: s.category,
+    unit: s.unit,
+    currentStock: s.quantity,
+    minStockLevel: s.reorderPoint,
+    costPerUnit: s.costPerUnit,
+    stockValue: s.stockValue,
+    status: s.status,
+    lastMovementAt: null,
+    countLocations: [],
+  };
+}
 
 export default function StockDashboardPage() {
   const router = useRouter();
@@ -43,12 +103,23 @@ export default function StockDashboardPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<StockStatusFilter>('all');
 
+  // ดูยอดของวันที่ผ่านมา — null = วันนี้ (ยอดล่าสุด แก้ไขได้) / มีวันที่ = ยอด ณ สิ้นวันนั้น ดูอย่างเดียว
+  const [viewDate, setViewDate] = useState<string | null>(null);
+  const [pastItems, setPastItems] = useState<Ingredient[]>([]);
+  const [pastLoading, setPastLoading] = useState<boolean>(false);
+  const [firstSnapshotDate, setFirstSnapshotDate] = useState<string | undefined>(undefined);
+  const viewRequest = useRef(0);
+  const today = useSyncExternalStore(noSubscribe, todayInThailand, () => null);
+
+  // รายการที่แสดง: วันนี้ = ยอดล่าสุด, วันอื่น = ยอดสิ้นวันนั้น
+  const shownIngredients = viewDate ? pastItems : ingredients;
+
   // กรอง/สรุปในเครื่องจากข้อมูลที่โหลดมาแล้ว (ไม่ต้องเรียก server ใหม่ทุกครั้งที่พิมพ์ค้นหาหรือกดกรอง)
   const visibleIngredients = useMemo(
-    () => filterInventory(ingredients, { search: searchQuery, category: selectedCategory, status: statusFilter }),
-    [ingredients, searchQuery, selectedCategory, statusFilter]
+    () => filterInventory(shownIngredients, { search: searchQuery, category: selectedCategory, status: statusFilter }),
+    [shownIngredients, searchQuery, selectedCategory, statusFilter]
   );
-  const stats = useMemo(() => computeInventoryStats(ingredients), [ingredients]);
+  const stats = useMemo(() => computeInventoryStats(shownIngredients), [shownIngredients]);
 
   // Modals State
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -87,6 +158,33 @@ export default function StockDashboardPage() {
     showToast('กรุณาเข้าสู่ระบบก่อนแก้ไขข้อมูล', 'error');
     goToLogin();
     return false;
+  };
+
+  // เลือกวันดูสต็อก: วันนี้ (หรือหลังจากนั้น) = ยอดล่าสุด / วันก่อนหน้า = โหลดยอดสิ้นวันจาก stock_daily_snapshots
+  const selectViewDate = async (next: string | null) => {
+    const request = ++viewRequest.current; // กดเลื่อนวันเร็วๆ → ใช้ผลของครั้งล่าสุดเท่านั้น
+    if (!today) return;
+    if (!next || next >= today) {
+      setViewDate(null);
+      setPastItems([]);
+      setPastLoading(false);
+      return;
+    }
+    if (firstSnapshotDate && next < firstSnapshotDate) return;
+    setViewDate(next);
+    setPastLoading(true);
+    const res = await loadStockHistory(next);
+    if (request !== viewRequest.current) return;
+    setPastLoading(false);
+    if (!res.success) {
+      handleWriteError(res, 'โหลดยอดของวันนั้นไม่ได้');
+      setViewDate(null);
+      setPastItems([]);
+      return;
+    }
+    setFirstSnapshotDate(res.totals.at(-1)?.date);
+    const live = new Map(ingredients.map((item) => [item.id, item]));
+    setPastItems(res.items.map((s) => snapshotToIngredient(s, live.get(s.itemId))));
   };
 
   const handleWriteError = (res: { error?: string; code?: string }, fallback: string) => {
@@ -333,6 +431,62 @@ export default function StockDashboardPage() {
           </div>
         )}
 
+        {/* เลือกวันดูสต็อก — วันนี้ = ยอดล่าสุด / วันก่อนหน้า = ยอด ณ สิ้นวัน (ดูอย่างเดียว) */}
+        <div
+          className={`mb-3.5 sm:mb-5 p-3 rounded-xl border flex flex-wrap items-center gap-x-2 gap-y-1.5 ${
+            viewDate ? 'bg-accent/5 border-accent/30' : 'bg-card border-slate-200'
+          }`}
+        >
+          <CalendarDays className="w-4 h-4 text-accent shrink-0" />
+          <span className="text-sm font-semibold text-ink">ดูสต็อกวันที่</span>
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              onClick={() => today && selectViewDate(shiftDate(viewDate ?? today, -1))}
+              disabled={!today || pastLoading || (!!firstSnapshotDate && !!viewDate && viewDate <= firstSnapshotDate)}
+              className="w-10 h-10 rounded-lg flex items-center justify-center text-slate-600 hover:bg-slate-100 disabled:opacity-30 touch-press"
+              aria-label="วันก่อนหน้า"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <input
+              type="date"
+              value={viewDate ?? today ?? ""}
+              min={firstSnapshotDate}
+              max={today ?? undefined}
+              onChange={(e) => selectViewDate(e.target.value || null)}
+              aria-label="เลือกวันที่ดูสต็อก"
+              className="h-10 px-2 rounded-lg border border-slate-300 bg-card text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent"
+            />
+            <button
+              onClick={() => today && selectViewDate(shiftDate(viewDate ?? today, 1))}
+              disabled={!viewDate || pastLoading}
+              className="w-10 h-10 rounded-lg flex items-center justify-center text-slate-600 hover:bg-slate-100 disabled:opacity-30 touch-press"
+              aria-label="วันถัดไป"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="basis-full flex items-center justify-between gap-2 text-xs">
+            {viewDate ? (
+              <>
+                <span className="text-slate-600">
+                  {pastLoading && <Loader2 className="inline w-3.5 h-3.5 mr-1 animate-spin" />}
+                  ยอด ณ สิ้นวัน <span className="font-semibold text-ink">{thaiDate(viewDate)}</span> · ดูอย่างเดียว
+                  {!pastLoading && pastItems.length === 0 && ' · ไม่มีข้อมูลของวันนั้น'}
+                </span>
+                <button
+                  onClick={() => selectViewDate(null)}
+                  className="h-8 px-3 rounded-lg bg-accent-strong text-white font-semibold shrink-0 touch-press"
+                >
+                  กลับเป็นวันนี้
+                </button>
+              </>
+            ) : (
+              <span className="text-slate-500">วันนี้ · ยอดล่าสุด</span>
+            )}
+          </div>
+        </div>
+
         {/* Summary Cards */}
         <SummaryCards
           stats={stats}
@@ -366,7 +520,8 @@ export default function StockDashboardPage() {
             setIsScaleModalOpen(true);
           }}
           onQuickAdjust={handleQuickAdjust}
-          loading={loading}
+          loading={loading || pastLoading}
+          readOnly={viewDate !== null}
         />
 
       </main>

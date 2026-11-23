@@ -3,12 +3,13 @@
 --
 --   item_count_locations   ชื่อจุดนับของแต่ละสินค้า + น้ำหนักภาชนะของจุดนั้น
 --
--- จุดนับเป็นแค่ตัวช่วยคิดเลขในหน้า /count: กรอกน้ำหนักแต่ละจุด → หักภาชนะของจุดนั้น → รวมกันเป็นยอดสต็อก
--- ระบบไม่จำยอดของแต่ละจุด ยอดจริงมีที่เดียวคือ items.current_stock (ของรับเข้าก็บวกเข้ายอดสต็อกตรงๆ)
+-- หน้า /count: กรอกน้ำหนักแต่ละจุด → หักภาชนะของจุดนั้น → รวมกันเป็นยอดสต็อก
+-- ระบบจำ "ยอดตอนนับล่าสุด" ของแต่ละจุดไว้ดู (last_count, last_counted_at) — จุดที่เว้นว่างตอนนับ = 0
+--   ยอดจริงมีที่เดียวคือ items.current_stock: รับเข้า/ใช้ออกไม่ต้องบอกจุด และไม่ไปปรับยอดรายจุด
+--   ยอดรายจุดจึงเปลี่ยนเฉพาะตอนนับเท่านั้น
 -- สินค้าที่ไม่มีจุดนับ ทำงานแบบเดิม (ช่องเดียว หักภาชนะด้วย items.tare_weight)
 -- วิธีรัน: วางทั้งไฟล์ใน Supabase SQL Editor แล้ว Run (รันซ้ำได้) — ต้องรัน supabase/inventory.sql มาก่อน
--- (ถ้าเคยรันไฟล์นี้รุ่นเก่าที่จำยอดรายจุด ไฟล์นี้จะลบคอลัมน์/trigger/function ของรุ่นนั้นออกให้
---  ชื่อจุดกับน้ำหนักภาชนะที่ตั้งไว้แล้วยังอยู่ครบ)
+-- (ถ้าเคยรันรุ่นเก่าที่บวกของรับเข้าเข้าจุดอัตโนมัติ ไฟล์นี้จะลบ trigger/function ของรุ่นนั้นออกให้)
 -- =====================================================================
 
 begin;
@@ -19,6 +20,8 @@ create table if not exists public.item_count_locations (
   name            text           not null check (btrim(name) <> ''),
   tare_weight     numeric(10, 2) not null default 0 check (tare_weight >= 0),  -- กรัม
   sort_order      integer        not null default 0,
+  last_count      numeric(12, 3),                                               -- ยอดสุทธิตอนนับล่าสุด (หน่วยของสินค้า)
+  last_counted_at timestamptz,
   created_at      timestamptz    not null default now(),
   unique (item_id, name)
 );
@@ -31,14 +34,16 @@ drop trigger if exists item_count_locations_audit on public.item_count_locations
 create trigger item_count_locations_audit after insert or update or delete on public.item_count_locations
   for each row execute function public.write_audit_log();
 
--- ลบของรุ่นเก่าที่จำยอดรายจุด (ยอดล่าสุดของจุด, จุดเก็บของรับเข้า, trigger บวกของรับเข้าเข้าจุด)
+alter table public.item_count_locations
+  add column if not exists last_count      numeric(12, 3),
+  add column if not exists last_counted_at timestamptz;
+
+-- ลบของรุ่นเก่า (จุดเก็บของรับเข้า, trigger บวกของรับเข้าเข้าจุด)
 drop view if exists public.v_item_count_locations;
 drop trigger if exists stock_movements_purchase_location on public.stock_movements;
 drop function if exists public.add_purchase_to_location();
 drop function if exists public.record_location_counts(bigint, jsonb, text);
 alter table public.item_count_locations
-  drop column if exists last_count,
-  drop column if exists last_counted_at,
   drop column if exists receives_purchases;
 
 -- สิทธิ์: เหมือนตารางอื่น — anon เข้าไม่ได้, ผู้ใช้ที่ล็อกอินอ่าน/เพิ่ม/แก้/ลบได้

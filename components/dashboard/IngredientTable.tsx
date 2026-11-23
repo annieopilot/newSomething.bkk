@@ -15,7 +15,8 @@ import {
   LayoutGrid, 
   List, 
   Filter,
-  PackageOpen
+  PackageOpen,
+  BellOff
 } from 'lucide-react';
 import { Ingredient } from '@/types/ingredient';
 import { formatNumber, getStockStatus } from '@/lib/utils';
@@ -34,6 +35,8 @@ interface IngredientTableProps {
   onOpenScaleModal: (ingredient: Ingredient) => void;
   onQuickAdjust: (ingredient: Ingredient, amount: number, mode: 'add' | 'subtract') => void;
   loading: boolean;
+  /** true = ดูยอดของวันที่ผ่านมา (ดูอย่างเดียว) — ซ่อนปุ่มชั่ง/แก้ไข/ลบ/ปรับยอด */
+  readOnly?: boolean;
 }
 
 export function IngredientTable({
@@ -50,6 +53,7 @@ export function IngredientTable({
   onOpenScaleModal,
   onQuickAdjust,
   loading,
+  readOnly = false,
 }: IngredientTableProps) {
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards');
 
@@ -255,6 +259,9 @@ export function IngredientTable({
                         <span className="font-semibold text-ink leading-tight">
                           {item.name}
                         </span>
+                        {!item.alertEnabled && (
+                          <BellOff className="w-3.5 h-3.5 shrink-0 text-slate-400" aria-label="ไม่เตือนเมื่อหมด" />
+                        )}
                         {item.barcode && (
                           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-600 border border-slate-200" title={`บาร์โค้ด: ${item.barcode}`}>
                             #{item.barcode}
@@ -322,7 +329,7 @@ export function IngredientTable({
                           <span className="font-semibold">{formatNumber(item.tareWeight, 1)} g</span>
                           <span className="text-[10px] opacity-75">ภาชนะ</span>
                         </div>
-                      ) : (
+                      ) : readOnly ? null : (
                         <button
                           onClick={() => onOpenScaleModal(item)}
                           className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium text-slate-400 hover:text-tare hover:bg-tare/5 transition-colors"
@@ -363,6 +370,7 @@ export function IngredientTable({
 
                     {/* Actions: Scale, Edit, Delete, Quick Adjust */}
                     <td className="py-3 px-4 sm:px-6 text-right whitespace-nowrap">
+                      {!readOnly && (
                       <div className="flex items-center justify-end space-x-1">
                         
                         {/* Quick Tare Deduction Button */}
@@ -394,6 +402,7 @@ export function IngredientTable({
                         </button>
 
                       </div>
+                      )}
                     </td>
                   </tr>
                 );
@@ -448,6 +457,9 @@ export function IngredientTable({
                 <div className="flex items-start justify-between gap-1">
                   <h4 className="font-bold text-ink text-sm sm:text-base leading-snug line-clamp-1">
                     {item.name}
+                    {!item.alertEnabled && (
+                      <BellOff className="inline w-3.5 h-3.5 ml-1 -mt-0.5 text-slate-400" aria-label="ไม่เตือนเมื่อหมด" />
+                    )}
                   </h4>
                   {item.barcode && (
                     <span className="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
@@ -484,6 +496,7 @@ export function IngredientTable({
                     </div>
                     
                     {/* Quick +/- Steppers */}
+                    {!readOnly && (
                     <div className="flex items-center space-x-1 pt-0.5">
                       <button
                         onClick={() => onQuickAdjust(item, item.unit === 'pcs' || item.unit === 'ใบ' || item.unit === 'Cup' ? 1 : 10, 'subtract')}
@@ -500,10 +513,12 @@ export function IngredientTable({
                         <Plus className="w-3.5 h-3.5" />
                       </button>
                     </div>
+                    )}
                   </div>
                 </div>
 
                 {/* Quick Touch Actions */}
+                {!readOnly && (
                 <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-1.5">
                   <button
                     onClick={() => onOpenScaleModal(item)}
@@ -528,6 +543,7 @@ export function IngredientTable({
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
+                )}
               </div>
             );
           })}

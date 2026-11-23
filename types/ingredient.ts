@@ -20,6 +20,7 @@ export interface Ingredient {
   notes: string | null;
   packageQuantity: number | null; // 1 หน่วยซื้อ = กี่หน่วยนับ (items.purchase_pack_size)
   status: 'ok' | 'low' | 'out';
+  alertEnabled: boolean; // false = ไม่ต้องแจ้งเตือนใน LINE เมื่อใกล้หมด/หมด (items.alert_enabled)
   lastMovementAt: string | null;
   countLocations: CountLocation[]; // จุดนับ (ว่าง = นับช่องเดียวแบบเดิม)
   createdAt?: string;
@@ -28,12 +29,15 @@ export interface Ingredient {
 
 /**
  * จุดนับของสินค้าที่วางไว้หลายที่ (ตาราง public.item_count_locations)
- * เป็นแค่ตัวช่วยคิดเลขตอนนับ: ยอดที่กรอกแต่ละจุด (หักภาชนะของจุดนั้น) รวมกัน = ยอดสต็อก — ระบบไม่จำยอดรายจุด
+ * ตอนนับ: ยอดที่กรอกแต่ละจุด (หักภาชนะของจุดนั้น) รวมกัน = ยอดสต็อก
+ * ระบบจำยอดของแต่ละจุด "ตอนนับล่าสุด" ไว้ดูอย่างเดียว — รับเข้า/ใช้ออกไม่ปรับยอดรายจุด
  */
 export interface CountLocation {
   id: string;
   name: string;
   tareWeight: number; // น้ำหนักภาชนะของจุดนี้ (กรัม)
+  lastCount: number | null; // ยอดสุทธิของจุดนี้ตอนนับล่าสุด (หน่วยของสินค้า) — null = ยังไม่เคยนับ
+  lastCountedAt: string | null;
 }
 
 /** จุดนับในฟอร์มแก้ไขสินค้า (ไม่มี id = จุดใหม่) */
@@ -56,6 +60,7 @@ export interface IngredientInput {
   tareWeight: number;
   currentStock: number; // ตอนสร้าง = ยอดเริ่มต้น, ตอนแก้ = ยอดใหม่ (ระบบบันทึกส่วนต่างเป็น "นับสต็อก")
   minStockLevel: number;
+  alertEnabled?: boolean; // ส่งเฉพาะเมื่อเปลี่ยน
   category?: string;
   costPerUnit?: number;
   barcode?: string;

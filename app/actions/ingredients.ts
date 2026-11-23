@@ -85,6 +85,8 @@ function mapLocationRow(row: any): CountLocation {
     id: String(row.id),
     name: row.name || '',
     tareWeight: toNumber(row.tare_weight),
+    lastCount: row.last_count == null ? null : toNumber(row.last_count),
+    lastCountedAt: row.last_counted_at ?? null,
   };
 }
 
@@ -107,6 +109,7 @@ function mapRow(row: any): Ingredient {
     notes: row.notes ?? null,
     packageQuantity: row.purchase_pack_size == null ? null : toNumber(row.purchase_pack_size),
     status: row.status,
+    alertEnabled: row.alert_enabled !== false, // ยังไม่ได้รัน item_alert_toggle.sql = เตือนทุกรายการ
     lastMovementAt: row.last_movement_at ?? null,
     countLocations: [],
     createdAt: row.created_at,
@@ -234,6 +237,7 @@ async function itemPayload(client: Client, data: Partial<IngredientInput>) {
   if (data.supplier !== undefined) payload.default_supplier_id = await resolveNamedId(client, 'suppliers', data.supplier);
   if (data.costPerUnit !== undefined) payload.cost_per_unit = Math.max(0, Number(data.costPerUnit) || 0);
   if (data.minStockLevel !== undefined) payload.reorder_point = Math.max(0, Number(data.minStockLevel) || 0);
+  if (data.alertEnabled !== undefined) payload.alert_enabled = data.alertEnabled;
   if (data.tareWeight !== undefined) payload.tare_weight = Math.max(0, Number(data.tareWeight) || 0);
   if (data.barcode !== undefined) payload.barcode = data.barcode.trim() || null;
   if (data.notes !== undefined) payload.notes = data.notes.trim() || null;
@@ -413,17 +417,19 @@ export async function quickAdjustStock(
 /**
  * บันทึกยอดนับสต็อกหลายรายการ (หน้า /count) — แต่ละรายการบันทึกส่วนต่างเป็น movement "count"
  * detail = วิธีคิดยอดของรายการที่นับแยกจุด (เช่น "หน้าบาร์ 120, หลังร้าน 800") ต่อท้ายหมายเหตุ
+ * locations = ยอดสุทธิของทุกจุดในการนับครั้งนี้ (จุดที่เว้นว่าง = 0) → จำเป็นยอดนับล่าสุดของแต่ละจุด
  * คืนรายการ id ที่บันทึกไม่สำเร็จ เพื่อให้หน้าเว็บเก็บค่าที่ยังไม่ได้บันทึกไว้ให้ลองใหม่
  */
 export async function saveStockCounts(
-  counts: { id: string; currentStock: number; detail?: string }[]
-): Promise<WriteResult & { savedIds?: string[]; failedIds?: string[] }> {
+  counts: { id: string; currentStock: number; detail?: string; locations?: { id: string; value: number }[] }[]
+): Promise<WriteResult & { savedIds?: string[]; failedIds?: string[]; countedAt?: string }> {
   const ctx = await requireClient();
   if ('failure' in ctx) return ctx.failure;
 
+  const countedAt = new Date().toISOString();
   try {
     const results = await Promise.all(
-      counts.map(async ({ id, currentStock, detail }) => {
+      counts.map(async ({ id, currentStock, detail, locations }) => {
         const { error } = await ctx.client.rpc('record_stock_count', {
           p_item_id: toId(id),
           p_counted: Math.max(0, Number(currentStock) || 0),
@@ -431,6 +437,15 @@ export async function saveStockCounts(
         });
         if (error) {
           return { id, failure: toWriteError(error, 'stock_movements', 'insert', 'เกิดข้อผิดพลาดในการบันทึกยอดนับ') };
+        }
+        // ยอดรายจุดเป็นข้อมูลไว้ดู — บันทึกไม่สำเร็จไม่ถือว่าการนับล้มเหลว (ยอดสต็อกบันทึกไปแล้ว)
+        for (const loc of locations ?? []) {
+          const { error: locErr } = await ctx.client
+            .from('item_count_locations')
+            .update({ last_count: Math.max(0, Number(loc.value) || 0), last_counted_at: countedAt })
+            .eq('id', toId(loc.id))
+            .eq('item_id', toId(id));
+          if (locErr) console.warn('Failed to remember location count:', locErr.message);
         }
         return { id, failure: null };
       })
@@ -442,9 +457,9 @@ export async function saveStockCounts(
 
     if (failedIds.length > 0) {
       const firstFailure = results.find((r) => r.failure)!.failure!;
-      return { ...firstFailure, success: false, savedIds, failedIds };
+      return { ...firstFailure, success: false, savedIds, failedIds, countedAt };
     }
-    return { success: true, savedIds, failedIds };
+    return { success: true, savedIds, failedIds, countedAt };
   } catch (error: any) {
     console.error('Failed to save stock counts:', error);
     return toWriteError(error, 'stock_movements', 'insert', 'เกิดข้อผิดพลาดในการบันทึกยอดนับ');

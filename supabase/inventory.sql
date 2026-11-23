@@ -119,6 +119,8 @@ create table if not exists public.items (
 alter table public.items add column if not exists barcode     text;
 alter table public.items add column if not exists tare_weight numeric(10, 2) not null default 0
   check (tare_weight >= 0);
+-- false = ไม่ต้องแจ้งเตือนใน LINE เมื่อสินค้านี้ใกล้หมด/หมด (ดู item_alert_toggle.sql)
+alter table public.items add column if not exists alert_enabled boolean not null default true;
 
 create index if not exists items_category_idx on public.items (category_id);
 create index if not exists items_active_idx   on public.items (is_active);
@@ -384,7 +386,8 @@ select
   i.notes,
   i.created_at,
   i.updated_at,
-  i.updated_by
+  i.updated_by,
+  i.alert_enabled
 from public.items i
 join public.units u                on u.code = i.unit_code
 left join public.item_categories c on c.id = i.category_id
@@ -423,7 +426,7 @@ select
   v.reorder_point::numeric as reorder_point,
   v.status
 from public.v_inventory v
-where v.is_active;
+where v.is_active and v.alert_enabled;
 
 -- ---------------------------------------------------------------------
 -- 9) สิทธิ์ (RLS): anon เข้าไม่ได้, ผู้ใช้ที่ล็อกอินใช้งานได้, service role (Edge Function) ข้าม RLS

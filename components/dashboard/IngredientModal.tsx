@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Scale, Save, AlertCircle, MapPin, Plus, Trash2 } from 'lucide-react';
+import { X, Scale, Save, AlertCircle, MapPin, Plus, Trash2, BellOff } from 'lucide-react';
 import { CountLocationInput, Ingredient, IngredientInput, InventoryLookups, EMPTY_LOOKUPS } from '@/types/ingredient';
 
 type StockMode = 'add' | 'subtract' | 'set';
@@ -55,6 +55,9 @@ export function IngredientModal({
   // จุดนับ — ส่งไปบันทึกเฉพาะเมื่อมีการแก้ (กันพังถ้ายังไม่ได้สร้างตาราง item_count_locations)
   const [locations, setLocations] = useState<CountLocationInput[]>([]);
   const [locationsDirty, setLocationsDirty] = useState<boolean>(false);
+  // แจ้งเตือนใน LINE — ส่งไปบันทึกเฉพาะเมื่อเปลี่ยน (กันพังถ้ายังไม่ได้รัน item_alert_toggle.sql)
+  const initialAlertEnabled = initialData?.alertEnabled ?? true;
+  const [alertEnabled, setAlertEnabled] = useState<boolean>(true);
   const updateLocations = (next: CountLocationInput[]) => {
     setLocations(next);
     setLocationsDirty(true);
@@ -97,6 +100,7 @@ export function IngredientModal({
       }))
     );
     setLocationsDirty(false);
+    setAlertEnabled(initialData?.alertEnabled ?? true);
   }, [initialData, isOpen]);
 
   const hasLocations = locations.length > 0;
@@ -135,6 +139,7 @@ export function IngredientModal({
     setErrorMessage('');
     // รับเข้า/จ่ายออก → บันทึกเป็นประวัติสต็อกตามประเภท, แก้ไขยอด → ตั้งยอดใหม่ (ระบบบันทึกเป็นการนับสต็อก)
     const countLocations = locationsDirty ? locations : undefined;
+    const alertChange = alertEnabled !== initialAlertEnabled ? alertEnabled : undefined;
     const success = await onSubmit(
       isEditMode && stockMode !== 'set'
         ? {
@@ -142,8 +147,9 @@ export function IngredientModal({
             currentStock: baseStock,
             stockMovement: { type: stockMode === 'add' ? 'purchase' : 'usage', quantity: stockAmount },
             countLocations,
+            alertEnabled: alertChange,
           }
-        : { ...formData, currentStock: resultingStock, countLocations }
+        : { ...formData, currentStock: resultingStock, countLocations, alertEnabled: alertChange }
     );
     if (success) {
       onClose();
@@ -269,10 +275,41 @@ export function IngredientModal({
                 </p>
               )}
 
-              {isEditMode && (initialData?.countLocations.length ?? 0) > 0 && (
-                <p className="text-xs text-slate-500">
-                  รายการนี้นับแยกจุด — ถ้าย้ายหรือรับของเข้าจุดไหน ให้นับจุดนั้นใหม่ที่หน้านับสต็อก ยอดแต่ละจุดจะได้ตรง
-                </p>
+              {isEditMode && initialData && initialData.countLocations.length > 0 && (
+                <div className="text-xs text-slate-500 space-y-1">
+                  {initialData.countLocations.some((loc) => loc.lastCount !== null) && (
+                    <ul className="rounded-lg bg-slate-50 px-3 py-2 space-y-0.5">
+                      <li className="font-semibold text-slate-600">ยอดรายจุด (ตอนนับล่าสุด)</li>
+                      {initialData.countLocations.map((loc) => (
+                        <li key={loc.id} className="flex justify-between gap-2">
+                          <span className="truncate">{loc.name}</span>
+                          <span className="shrink-0 text-slate-600">
+                            {loc.lastCount === null ? (
+                              'ยังไม่เคยนับ'
+                            ) : (
+                              <>
+                                <span className="font-semibold">
+                                  {loc.lastCount} {initialData.unit}
+                                </span>
+                                {loc.lastCountedAt &&
+                                  ` · ${new Date(loc.lastCountedAt).toLocaleString('th-TH', {
+                                    timeZone: 'Asia/Bangkok',
+                                    day: 'numeric',
+                                    month: 'short',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}`}
+                              </>
+                            )}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p>
+                    รายการนี้นับแยกจุด — รับเข้า/ใช้ออกไม่ได้ปรับยอดรายจุด ยอดรายจุดจะอัปเดตเมื่อนับที่หน้านับสต็อก
+                  </p>
+                </div>
               )}
             </div>
 
@@ -340,6 +377,21 @@ export function IngredientModal({
                     {formData.unit}
                   </span>
                 </div>
+                <label className="mt-2 flex items-start gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!alertEnabled}
+                    onChange={(e) => setAlertEnabled(!e.target.checked)}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-primary cursor-pointer"
+                  />
+                  <span className="text-xs text-slate-700">
+                    <span className="inline-flex items-center gap-1 font-semibold">
+                      <BellOff className="w-3.5 h-3.5 text-slate-500" />
+                      ถ้าสินค้านี้หมด ไม่ต้องเตือน
+                    </span>
+                    <span className="block text-[11px] text-slate-500">ไม่แจ้งใน LINE และไม่ขึ้นในคำสั่ง /สต็อก</span>
+                  </span>
+                </label>
               </div>
 
               {/* Tare Weight */}
