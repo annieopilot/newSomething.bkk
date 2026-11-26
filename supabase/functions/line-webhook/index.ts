@@ -13,6 +13,7 @@ const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SE
 const STOCK_CMDS = ["สต็อก", "สต๊อก", "stock"];
 const HISTORY_CMDS = ["ยอด", "history"];
 const HELP_CMDS = ["help", "ช่วย", "คำสั่ง"];
+const PASSWORD_CMDS = ["password", "รหัส"];
 const MAX_REMINDERS_PER_GROUP = 50;
 
 const HELP_TEXT = [
@@ -28,6 +29,9 @@ const HELP_TEXT = [
   "",
   EXCEL_HELP,
   "",
+  "🔑 เข้าเว็บ",
+  "• /password — ดูลิงก์เว็บ อีเมล และรหัสผ่าน",
+  "",
   REMINDER_HELP,
   "",
   "❓ /คำสั่ง — ดูหน้านี้อีกครั้ง",
@@ -40,7 +44,7 @@ async function isRegistered(groupId: string) {
 
 // ชื่อคำสั่งที่รู้จัก เรียงยาวก่อน เพื่อให้ "เตือนทุกวัน" ไม่ถูกจับเป็น "เตือน"
 const KNOWN_CMDS = [
-  "register", ...STOCK_CMDS, ...HISTORY_CMDS, ...HELP_CMDS, ...EXCEL_CMDS,
+  "register", ...STOCK_CMDS, ...HISTORY_CMDS, ...HELP_CMDS, ...EXCEL_CMDS, ...PASSWORD_CMDS,
   "เตือนทุกวัน", "เตือน", "รายการเตือน", "ลบเตือน", "รับ", "ยกเลิกรับ",
 ]
   .sort((a, b) => b.length - a.length);
@@ -138,6 +142,15 @@ async function displayNameOf(gid: string, userId: string | null) {
   }
 }
 
+// บัญชีเข้าเว็บ เก็บใน Supabase secret WEB_LOGINS (repo เป็นสาธารณะ ห้ามใส่รหัสในโค้ด)
+// ตอบเฉพาะกลุ่มที่ลงทะเบียนแล้ว (เช็กก่อนถึงตรงนี้)
+function passwordText() {
+  const logins = Deno.env.get("WEB_LOGINS")?.trim();
+  if (!logins) return "ยังไม่ได้ตั้งบัญชีเข้าเว็บ (secret WEB_LOGINS)";
+  const url = Deno.env.get("WEB_URL") ?? "https://new-something-bkk.vercel.app";
+  return `🔑 เข้าเว็บสต็อก\n${url}\n\n${logins}\n\nอย่าส่งรหัสนี้ให้คนนอกร้านนะครับ`;
+}
+
 async function stockText() {
   const { data, error } = await db.from("v_stock_status").select("*").neq("status", "ok");
   if (error) {
@@ -189,6 +202,7 @@ Deno.serve(async (req) => {
     else if (HISTORY_CMDS.includes(cmd)) reply = await stockHistoryText(db, args);
     else if (HELP_CMDS.includes(cmd)) reply = HELP_TEXT;
     else if (EXCEL_CMDS.includes(cmd)) reply = await excelExportText(db);
+    else if (PASSWORD_CMDS.includes(cmd)) reply = passwordText();
     else if (cmd === "เตือน") reply = await addReminder(gid, ev.source.userId ?? null, args, false);
     else if (cmd === "เตือนทุกวัน") reply = await addReminder(gid, ev.source.userId ?? null, args, true);
     else if (cmd === "รายการเตือน") reply = await listReminders(gid);
